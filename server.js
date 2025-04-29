@@ -5,27 +5,25 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 8080;
 
-// Supabase client setup
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Supabase config
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY
+);
 
-// Middleware to parse JSON and form-urlencoded
+// Middleware para recibir JSON
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-// Webhook from Twilio (SMS/WhatsApp)
+// Webhook desde Vapi (mensaje ya procesado)
 app.post('/webhook', async (req, res) => {
-  console.log('=== Webhook recibido de Twilio ===');
+  console.log('=== Webhook recibido desde Vapi ===');
   console.log(JSON.stringify(req.body, null, 2));
 
-  const message = req.body.Body;
-  const phone = req.body.From;
-  const name = req.body.ProfileName || 'SMS User';
+  const { user_message, phone_number, agent_name } = req.body;
 
-  if (!message || !phone) {
-    console.error('Faltan datos para guardar:', { message, phone });
-    return res.status(400).json({ error: 'Missing message or phone' });
+  if (!user_message || !phone_number) {
+    console.error('Faltan datos importantes:', { user_message, phone_number });
+    return res.status(400).json({ error: 'Datos incompletos' });
   }
 
   try {
@@ -33,32 +31,31 @@ app.post('/webhook', async (req, res) => {
       .from('conversations')
       .insert([
         {
-          lead_phone: phone,
-          last_message: message,
-          agent_name: name,
+          lead_phone: phone_number,
+          last_message: user_message,
+          agent_name: agent_name || 'Vapi Default',
           status: 'New',
           created_at: new Date().toISOString()
         }
       ]);
 
     if (error) {
-      console.error('Error guardando en Supabase:', error);
-      return res.status(500).json({ error: 'Error inserting data' });
+      console.error('Error al guardar en Supabase:', error);
+      return res.status(500).json({ error: 'Error al insertar' });
     }
 
-    console.log('Lead guardado exitosamente:', data);
-    res.status(200).json({ message: 'Lead received and stored.' });
+    console.log('Lead guardado correctamente:', data);
+    res.status(200).json({ message: 'Mensaje procesado y guardado.' });
   } catch (err) {
     console.error('Error inesperado:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
 
-// Prueba simple
 app.get('/', (req, res) => {
-  res.send('Servidor funcionando y listo para recibir Webhooks de Twilio SMS/WhatsApp');
+  res.send('Servidor listo para recibir Webhooks desde Vapi');
 });
 
 app.listen(port, () => {
-  console.log(`Servidor escuchando en el puerto ${port}`);
+  console.log(`Servidor activo en puerto ${port}`);
 });
