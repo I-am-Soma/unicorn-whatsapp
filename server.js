@@ -5,33 +5,60 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 8080;
 
-// Variables de entorno
+// Supabase client setup
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// Middleware para parsear JSON y URL-encoded (¡esto es lo nuevo!)
+// Middleware to parse JSON and form-urlencoded
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Webhook para recibir mensajes de Vapi/Twilio
+// Webhook from Twilio (SMS/WhatsApp)
 app.post('/webhook', async (req, res) => {
-  console.log('=== Headers recibidos ===');
-  console.log(JSON.stringify(req.headers, null, 2));
-
-  console.log('=== Body COMPLETO recibido en /webhook ===');
+  console.log('=== Webhook recibido de Twilio ===');
   console.log(JSON.stringify(req.body, null, 2));
 
-  res.status(200).json({ message: 'Log received' });
+  const message = req.body.Body;
+  const phone = req.body.From;
+  const name = req.body.ProfileName || 'SMS User';
+
+  if (!message || !phone) {
+    console.error('Faltan datos para guardar:', { message, phone });
+    return res.status(400).json({ error: 'Missing message or phone' });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('conversations')
+      .insert([
+        {
+          lead_phone: phone,
+          last_message: message,
+          agent_name: name,
+          status: 'New',
+          created_at: new Date().toISOString()
+        }
+      ]);
+
+    if (error) {
+      console.error('Error guardando en Supabase:', error);
+      return res.status(500).json({ error: 'Error inserting data' });
+    }
+
+    console.log('Lead guardado exitosamente:', data);
+    res.status(200).json({ message: 'Lead received and stored.' });
+  } catch (err) {
+    console.error('Error inesperado:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
-// Ruta de prueba
+// Prueba simple
 app.get('/', (req, res) => {
-  res.send('Webhook server is running and ready to receive Vapi data!');
+  res.send('Servidor funcionando y listo para recibir Webhooks de Twilio SMS/WhatsApp');
 });
 
-// Iniciar el servidor
 app.listen(port, () => {
-  console.log(`Server listening on port ${port}`);
+  console.log(`Servidor escuchando en el puerto ${port}`);
 });
-
