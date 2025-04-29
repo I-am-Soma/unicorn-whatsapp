@@ -16,9 +16,12 @@ app.use(express.json());
 // Webhook para recibir mensajes de Vapi
 app.post('/webhook', async (req, res) => {
   console.log('=== Body COMPLETO recibido en /webhook ===');
-  console.log(JSON.stringify(req.body, null, 2)); // 👈 Aquí vemos qué datos llegan
+  console.log(JSON.stringify(req.body, null, 2));
 
-  const { user_message, phone_number, agent_name } = req.body;
+  // 🔵 Ahora extraemos correctamente:
+  const user_message = req.body.input?.transcript;
+  const phone_number = req.body.session?.user?.phone_num;
+  const agent_name = "Unicorn Lead Bot"; // Si quieres dejarlo fijo
 
   if (!user_message || !phone_number) {
     console.error('Faltan datos importantes:', { user_message, phone_number });
@@ -32,7 +35,7 @@ app.post('/webhook', async (req, res) => {
         {
           lead_phone: phone_number,
           last_message: user_message,
-          agent_name: agent_name || 'Vapi Default',
+          agent_name: agent_name,
           status: 'New',
           created_at: new Date().toISOString()
         }
@@ -60,3 +63,4 @@ app.get('/', (req, res) => {
 app.listen(port, () => {
   console.log(`Server listening on port ${port}`);
 });
+
