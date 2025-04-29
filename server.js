@@ -18,12 +18,12 @@ app.post('/webhook', async (req, res) => {
   const { phone, message, agentName } = req.body;
 
   if (!phone || !message) {
-    return res.status(400).send('Missing phone or message');
+    return res.status(400).json({ error: 'Missing phone or message' });
   }
 
   try {
     const { data, error } = await supabase
-      .from('Conversations')
+      .from('conversations')
       .insert([
         {
           lead_phone: phone,
@@ -36,17 +36,18 @@ app.post('/webhook', async (req, res) => {
 
     if (error) {
       console.error('Supabase insert error:', error);
-      return res.status(500).send('Error inserting data');
+      return res.status(500).json({ error: 'Error inserting data' });
     }
 
-    res.status(200).send('Data received and inserted successfully');
+    console.log('Mensaje guardado en Supabase:', data);
+    res.status(200).json({ message: 'Data received and inserted successfully' });
   } catch (err) {
     console.error('Unexpected error:', err);
-    res.status(500).send('Internal server error');
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Rutas básicas
+// Ruta de prueba
 app.get('/', (req, res) => {
   res.send('Webhook server is running and ready to receive Vapi data!');
 });
@@ -54,3 +55,4 @@ app.get('/', (req, res) => {
 app.listen(port, () => {
   console.log(`Server listening on port ${port}`);
 });
+
