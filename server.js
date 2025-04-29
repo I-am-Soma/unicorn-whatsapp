@@ -15,7 +15,8 @@ app.use(express.json());
 
 // Webhook para recibir mensajes de Vapi
 app.post('/webhook', async (req, res) => {
-  console.log('Body recibido en /webhook:', req.body);
+  console.log('=== Body COMPLETO recibido en /webhook ===');
+  console.log(JSON.stringify(req.body, null, 2)); // 👈 Aquí vemos qué datos llegan
 
   const { user_message, phone_number, agent_name } = req.body;
 
@@ -42,15 +43,15 @@ app.post('/webhook', async (req, res) => {
       return res.status(500).json({ error: 'Error inserting data' });
     }
 
-    console.log('Mensaje guardado en Supabase:', data);
+    console.log('Mensaje guardado exitosamente en Supabase:', data);
     res.status(200).json({ message: 'Data received and inserted successfully' });
   } catch (err) {
-    console.error('Unexpected error:', err);
+    console.error('Unexpected server error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Ruta básica para probar que el server está vivo
+// Ruta básica para probar si el servidor corre
 app.get('/', (req, res) => {
   res.send('Webhook server is running and ready to receive Vapi data!');
 });
