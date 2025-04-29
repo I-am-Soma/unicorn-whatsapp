@@ -5,7 +5,7 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 8080;
 
-// Variables de entorno (no las estamos usando todavía aquí)
+// Variables de entorno (aunque no estamos usando Supabase aún)
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
@@ -15,13 +15,16 @@ app.use(express.json());
 
 // Webhook para recibir mensajes de Vapi
 app.post('/webhook', async (req, res) => {
+  console.log('=== Headers recibidos ===');
+  console.log(JSON.stringify(req.headers, null, 2)); // 👈 Imprimimos headers recibidos
+
   console.log('=== Body COMPLETO recibido en /webhook ===');
-  console.log(JSON.stringify(req.body, null, 2)); // 👈 Esto imprimirá bonito todo el body que llegue
+  console.log(JSON.stringify(req.body, null, 2)); // 👈 Imprimimos bonito el body recibido
 
   res.status(200).json({ message: 'Log received' });
 });
 
-// Ruta simple para probar que el server funciona
+// Ruta simple para confirmar que el server está corriendo
 app.get('/', (req, res) => {
   res.send('Webhook server is running and ready to receive Vapi data!');
 });
@@ -30,3 +33,4 @@ app.get('/', (req, res) => {
 app.listen(port, () => {
   console.log(`Server listening on port ${port}`);
 });
+
