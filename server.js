@@ -1,7 +1,22 @@
-app.post('/webhook', async (req, res) => {
-  console.log('Body recibido en /webhook:', req.body); // 👈 Para ver qué llega exactamente
+const express = require('express');
+const { createClient } = require('@supabase/supabase-js');
+require('dotenv').config();
 
-  // ATENCIÓN: Cambiamos las variables
+const app = express();
+const port = process.env.PORT || 8080;
+
+// Variables de entorno
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// Middleware para parsear JSON
+app.use(express.json());
+
+// Webhook para recibir mensajes de Vapi
+app.post('/webhook', async (req, res) => {
+  console.log('Body recibido en /webhook:', req.body);
+
   const { user_message, phone_number, agent_name } = req.body;
 
   if (!user_message || !phone_number) {
@@ -33,4 +48,14 @@ app.post('/webhook', async (req, res) => {
     console.error('Unexpected error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+// Ruta básica para probar que el server está vivo
+app.get('/', (req, res) => {
+  res.send('Webhook server is running and ready to receive Vapi data!');
+});
+
+// Iniciar el servidor
+app.listen(port, () => {
+  console.log(`Server listening on port ${port}`);
 });
