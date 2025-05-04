@@ -36,13 +36,11 @@ app.post('/webhook', async (req, res) => {
       .from('conversations')
       .insert([
         {
-          lead_phone: phone,
-          last_message: message,
-          agent_name: name,
-          status: 'New',
-          created_at: new Date().toISOString(),
-          procesar: true,           // por defecto true
-          origen: 'Twilio'
+           lead_phone: phone,
+    last_message: message,
+    agent_name: name,
+    status: 'New',
+    created_at: new Date().toISOString()
         }
       ])
       .select();
