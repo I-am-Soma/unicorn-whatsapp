@@ -40,7 +40,8 @@ app.post('/webhook', async (req, res) => {
     last_message: message,
     agent_name: name,
     status: 'New',
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
+    origen: 'whatsapp' // 
         }
       ])
       .select();
