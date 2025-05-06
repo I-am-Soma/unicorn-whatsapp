@@ -36,12 +36,12 @@ app.post('/webhook', async (req, res) => {
       .from('conversations')
       .insert([
         {
-           lead_phone: phone,
-    last_message: message,
-    agent_name: name,
-    status: 'New',
-    created_at: new Date().toISOString(),
-    origen: 'whatsapp' // 
+          lead_phone: phone,
+          last_message: message,
+          agent_name: name,
+          status: 'New',
+          created_at: new Date().toISOString(),
+          origen: 'whatsapp'
         }
       ])
       .select();
@@ -79,6 +79,31 @@ app.post('/webhook', async (req, res) => {
   } catch (err) {
     console.error('❌ Error inesperado:', err);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// NUEVO ENDPOINT PARA VAPI
+app.post('/vapi-send', async (req, res) => {
+  console.log('📩 Petición recibida en /vapi-send:', req.body);
+
+  const { phone, message } = req.body;
+  if (!phone || !message) {
+    return res.status(400).json({ error: 'Faltan phone o message' });
+  }
+
+  try {
+    const response = await axios.post(process.env.VAPI_URL, {
+      phone,
+      message
+    }, {
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    console.log('✅ Enviado a Vapi:', response.data);
+    res.status(200).json({ status: 'ok', data: response.data });
+  } catch (error) {
+    console.error('❌ Error al enviar a Vapi:', error.message);
+    res.status(500).json({ error: 'Falló el envío a Vapi' });
   }
 });
 
