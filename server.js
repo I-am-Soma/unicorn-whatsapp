@@ -16,6 +16,37 @@ const supabase = createClient(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// 🚨 NUEVO ENDPOINT: recibe datos desde trigger en Supabase y los envía a Vapi
+app.post('/send-to-vapi', async (req, res) => {
+  console.log('📨 Disparo recibido desde Supabase trigger');
+  const { lead_phone, last_message, agent_name } = req.body;
+
+  if (!lead_phone || !last_message) {
+    console.error('❌ Faltan datos para enviar a Vapi');
+    return res.status(400).json({ error: 'Missing phone or message' });
+  }
+
+  try {
+    const response = await axios.post(
+      'https://api.vapi.ai/message', // puedes cambiar aquí la URL si usas otro endpoint
+      {
+        phone_number: lead_phone,
+        user_message: last_message,
+        agent_name: agent_name || 'Unicorn AI'
+      },
+      {
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+
+    console.log('✅ Mensaje enviado a Vapi:', response.data);
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('❌ Error al enviar a Vapi:', error.message);
+    res.status(500).json({ error: 'Failed to send message to Vapi' });
+  }
+});
+
 // Webhook directo desde Twilio
 app.post('/webhook', async (req, res) => {
   console.log('=== Webhook recibido desde Twilio ===');
@@ -31,17 +62,16 @@ app.post('/webhook', async (req, res) => {
   }
 
   try {
-    // Guardar en Supabase
     const { data, error } = await supabase
       .from('conversations')
       .insert([
         {
-           lead_phone: phone,
-    last_message: message,
-    agent_name: name,
-    status: 'New',
-    created_at: new Date().toISOString(),
-    origen: 'whatsapp' // 
+          lead_phone: phone,
+          last_message: message,
+          agent_name: name,
+          status: 'New',
+          created_at: new Date().toISOString(),
+          origen: 'whatsapp'
         }
       ])
       .select();
@@ -53,7 +83,6 @@ app.post('/webhook', async (req, res) => {
 
     const inserted = data[0];
 
-    // Si está marcado para procesar, mandar a Unicornio
     if (inserted.procesar) {
       try {
         const unicornioResponse = await axios.post(
@@ -82,11 +111,12 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// Prueba simple
+// Home test
 app.get('/', (req, res) => {
-  res.send('🟢 Servidor activo escuchando Webhooks de Twilio.');
+  res.send('🟢 Servidor activo escuchando Webhooks de Twilio y Supabase.');
 });
 
 app.listen(port, () => {
   console.log(`🟢 Server escuchando en puerto ${port}`);
 });
+
