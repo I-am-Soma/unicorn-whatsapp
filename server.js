@@ -16,36 +16,51 @@ const supabase = createClient(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 🚨 ENDPOINT para Vapi (no se llama directamente por usuario)
-app.post('/send-to-vapi', async (req, res) => {
-  console.log('📨 Disparo recibido desde función local');
-  const { lead_phone, last_message, agent_name } = req.body;
-
-  if (!lead_phone || !last_message) {
-    console.error('❌ Faltan datos para enviar a Vapi');
-    return res.status(400).json({ error: 'Missing phone or message' });
-  }
-
+// 🚨 Nuevo: Proceso local periódico para revisar y enviar a Vapi
+setInterval(async () => {
+  console.log('🔁 Revisando mensajes nuevos para Vapi...');
   try {
-    const response = await axios.post(
-      'https://api.vapi.ai/message',
-      {
-        phone_number: lead_phone,
-        user_message: last_message,
-        agent_name: agent_name || 'Unicorn AI',
-      },
-      {
-        headers: { 'Content-Type': 'application/json' },
-      }
-    );
+    const { data: rows, error } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('procesar', true)
+      .order('created_at', { ascending: true })
+      .limit(10);
 
-    console.log('✅ Mensaje enviado a Vapi:', response.data);
-    res.status(200).json({ success: true });
-  } catch (error) {
-    console.error('❌ Error al enviar a Vapi:', error.message);
-    res.status(500).json({ error: 'Failed to send message to Vapi' });
+    if (error) {
+      console.error('❌ Error al consultar Supabase:', error.message);
+      return;
+    }
+
+    for (const row of rows) {
+      console.log('📨 Disparo recibido desde función local');
+      try {
+        const response = await axios.post(
+          'https://api.vapi.ai/message',
+          {
+            phone: row.lead_phone,
+            message: row.last_message,
+            agentName: row.agent_name || 'Unicorn AI',
+          },
+          {
+            headers: { 'Content-Type': 'application/json' }
+          }
+        );
+
+        console.log(`✅ Enviado a Vapi:`, response.data);
+
+        await supabase
+          .from('conversations')
+          .update({ procesar: false })
+          .eq('id', row.id);
+      } catch (error) {
+        console.error(`❌ Error enviando a Vapi (id: ${row.id}):`, error.message);
+      }
+    }
+  } catch (e) {
+    console.error('❌ Error inesperado en ciclo local:', e.message);
   }
-});
+}, 10000); // cada 10 segundos
 
 // Webhook directo desde Twilio
 app.post('/webhook', async (req, res) => {
@@ -72,8 +87,8 @@ app.post('/webhook', async (req, res) => {
           status: 'New',
           created_at: new Date().toISOString(),
           origen: 'whatsapp',
-          procesar: false,
-        },
+          procesar: false
+        }
       ])
       .select();
 
@@ -82,81 +97,17 @@ app.post('/webhook', async (req, res) => {
       return res.status(500).json({ error: 'Error inserting in Supabase' });
     }
 
-    const inserted = data[0];
-
-    if (inserted.procesar) {
-      try {
-        const unicornioResponse = await axios.post(
-          process.env.UNICORNIO_URL,
-          {
-            phone: inserted.lead_phone,
-            message: inserted.last_message,
-            source: inserted.origen || 'Twilio',
-          },
-          {
-            headers: { 'Content-Type': 'application/json' },
-          }
-        );
-
-        console.log('✅ Enviado a Unicornio:', unicornioResponse.data);
-      } catch (err) {
-        console.warn('⚠️ No se pudo enviar a Unicornio:', err.message);
-      }
-    }
-
-    console.log('✅ Lead guardado correctamente:', inserted);
+    console.log('✅ Lead guardado correctamente:', data[0]);
     res.status(200).json({ message: 'Mensaje procesado y guardado.' });
   } catch (err) {
-    console.error('❌ Error inesperado:', err);
+    console.error('❌ Error inesperado:', err.message);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// 🔁 Loop: verifica cada 10 segundos si hay mensajes por procesar
-setInterval(async () => {
-  console.log('🔁 Revisando mensajes nuevos para Vapi...');
-
-  const { data, error } = await supabase
-    .from('conversations')
-    .select('*')
-    .eq('procesar', true)
-    .order('created_at', { ascending: true })
-    .limit(5);
-
-  if (error) {
-    console.error('❌ Error al consultar Supabase:', error.message);
-    return;
-  }
-
-  for (const conv of data) {
-    try {
-      const response = await axios.post(
-        `${process.env.BASE_URL || 'https://unicorn-whatsapp-production.up.railway.app'}/send-to-vapi`,
-        {
-          lead_phone: conv.lead_phone,
-          last_message: conv.last_message,
-          agent_name: conv.agent_name || 'Unicorn AI',
-        },
-        {
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
-
-      console.log(`✅ Vapi respondió para ${conv.lead_phone}`);
-
-      await supabase
-        .from('conversations')
-        .update({ procesar: false })
-        .eq('id', conv.id);
-    } catch (err) {
-      console.error(`❌ Error enviando a Vapi (id: ${conv.id}):`, err.message);
-    }
-  }
-}, 10000);
-
-// Home
+// Home test
 app.get('/', (req, res) => {
-  res.send('🟢 Servidor activo escuchando Webhooks y ciclo a Vapi');
+  res.send('🟢 Servidor activo escuchando Webhooks de Twilio y ejecutando envíos a Vapi.');
 });
 
 app.listen(port, () => {
