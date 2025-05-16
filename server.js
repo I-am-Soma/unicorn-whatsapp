@@ -16,9 +16,9 @@ const supabase = createClient(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 🚨 NUEVO ENDPOINT: recibe datos desde Supabase trigger y los envía a Vapi
+// 🚨 ENDPOINT para Vapi (no se llama directamente por usuario)
 app.post('/send-to-vapi', async (req, res) => {
-  console.log('📨 Disparo recibido desde Supabase trigger');
+  console.log('📨 Disparo recibido desde función local');
   const { lead_phone, last_message, agent_name } = req.body;
 
   if (!lead_phone || !last_message) {
@@ -28,14 +28,14 @@ app.post('/send-to-vapi', async (req, res) => {
 
   try {
     const response = await axios.post(
-      'https://api.vapi.ai/message', // cambia esto si usas otro endpoint
+      'https://api.vapi.ai/message',
       {
         phone_number: lead_phone,
         user_message: last_message,
-        agent_name: agent_name || 'Unicorn AI'
+        agent_name: agent_name || 'Unicorn AI',
       },
       {
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
       }
     );
 
@@ -71,8 +71,9 @@ app.post('/webhook', async (req, res) => {
           agent_name: name,
           status: 'New',
           created_at: new Date().toISOString(),
-          origen: 'whatsapp'
-        }
+          origen: 'whatsapp',
+          procesar: false,
+        },
       ])
       .select();
 
@@ -90,10 +91,10 @@ app.post('/webhook', async (req, res) => {
           {
             phone: inserted.lead_phone,
             message: inserted.last_message,
-            source: inserted.origen || 'Twilio'
+            source: inserted.origen || 'Twilio',
           },
           {
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 'Content-Type': 'application/json' },
           }
         );
 
@@ -111,9 +112,51 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// Home test
+// 🔁 Loop: verifica cada 10 segundos si hay mensajes por procesar
+setInterval(async () => {
+  console.log('🔁 Revisando mensajes nuevos para Vapi...');
+
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('*')
+    .eq('procesar', true)
+    .order('created_at', { ascending: true })
+    .limit(5);
+
+  if (error) {
+    console.error('❌ Error al consultar Supabase:', error.message);
+    return;
+  }
+
+  for (const conv of data) {
+    try {
+      const response = await axios.post(
+        `${process.env.BASE_URL || 'https://unicorn-whatsapp-production.up.railway.app'}/send-to-vapi`,
+        {
+          lead_phone: conv.lead_phone,
+          last_message: conv.last_message,
+          agent_name: conv.agent_name || 'Unicorn AI',
+        },
+        {
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+
+      console.log(`✅ Vapi respondió para ${conv.lead_phone}`);
+
+      await supabase
+        .from('conversations')
+        .update({ procesar: false })
+        .eq('id', conv.id);
+    } catch (err) {
+      console.error(`❌ Error enviando a Vapi (id: ${conv.id}):`, err.message);
+    }
+  }
+}, 10000);
+
+// Home
 app.get('/', (req, res) => {
-  res.send('🟢 Servidor activo escuchando Webhooks de Twilio y Supabase.');
+  res.send('🟢 Servidor activo escuchando Webhooks y ciclo a Vapi');
 });
 
 app.listen(port, () => {
