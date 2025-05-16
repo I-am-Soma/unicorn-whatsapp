@@ -6,7 +6,6 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 8080;
 
-// Supabase config
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_ANON_KEY
@@ -16,63 +15,16 @@ const supabase = createClient(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 🚨 Nuevo: Proceso local periódico para revisar y enviar a Vapi
-setInterval(async () => {
-  console.log('🔁 Revisando mensajes nuevos para Vapi...');
-  try {
-    const { data: rows, error } = await supabase
-      .from('conversations')
-      .select('*')
-      .eq('procesar', true)
-      .order('created_at', { ascending: true })
-      .limit(10);
-
-    if (error) {
-      console.error('❌ Error al consultar Supabase:', error.message);
-      return;
-    }
-
-    for (const row of rows) {
-      console.log('📨 Disparo recibido desde función local');
-      try {
-        const response = await axios.post(
-          'https://unicorn-whatsapp-production.up.railway.app/webhook',
-          {
-            phone: row.lead_phone,
-            message: row.last_message,
-            agentName: row.agent_name || 'Unicorn AI',
-          },
-          {
-            headers: { 'Content-Type': 'application/json' }
-          }
-        );
-
-        console.log(`✅ Enviado a Vapi:`, response.data);
-
-        await supabase
-          .from('conversations')
-          .update({ procesar: false })
-          .eq('id', row.id);
-      } catch (error) {
-        console.error(`❌ Error enviando a Vapi (id: ${row.id}):`, error.message);
-      }
-    }
-  } catch (e) {
-    console.error('❌ Error inesperado en ciclo local:', e.message);
-  }
-}, 10000); // cada 10 segundos
-
-// Webhook directo desde Twilio
+// Endpoint principal
 app.post('/webhook', async (req, res) => {
-  console.log('=== Webhook recibido desde Twilio ===');
-  console.log(JSON.stringify(req.body, null, 2));
-
-  const message = req.body.Body;
-  const phone = req.body.From;
-  const name = req.body.ProfileName || 'SMS User';
+  console.log('📩 Webhook recibido');
+  const { Body, From, ProfileName } = req.body;
+  const message = Body;
+  const phone = From;
+  const name = ProfileName || 'SMS User';
 
   if (!message || !phone) {
-    console.error('Faltan datos para guardar:', { message, phone });
+    console.error('❌ Faltan datos para guardar:', { message, phone });
     return res.status(400).json({ error: 'Missing message or phone' });
   }
 
@@ -87,27 +39,50 @@ app.post('/webhook', async (req, res) => {
           status: 'New',
           created_at: new Date().toISOString(),
           origen: 'whatsapp',
-          procesar: false
+          procesar: true
         }
       ])
       .select();
 
     if (error) {
-      console.error('Error al guardar en Supabase:', error);
-      return res.status(500).json({ error: 'Error inserting in Supabase' });
+      console.error('❌ Error al guardar en Supabase:', error);
+      return res.status(500).json({ error: 'Supabase insert error' });
     }
 
-    console.log('✅ Lead guardado correctamente:', data[0]);
-    res.status(200).json({ message: 'Mensaje procesado y guardado.' });
+    console.log('✅ Guardado en Supabase:', data[0]);
+
+    // Enviar de regreso si viene de origen "unicorn"
+    const inserted = data[0];
+    if (inserted.origen === 'unicorn') {
+      try {
+        const response = await axios.post(
+          process.env.VAPI_WEBHOOK_URL, // Debe estar en tus variables de entorno
+          {
+            phone_number: inserted.lead_phone,
+            user_message: inserted.last_message,
+            agent_name: inserted.agent_name || 'Unicorn Bot'
+          },
+          {
+            headers: { 'Content-Type': 'application/json' }
+          }
+        );
+
+        console.log('📤 Enviado a Vapi:', response.status);
+      } catch (err) {
+        console.warn('⚠️ Fallo al enviar a Vapi:', err.message);
+      }
+    }
+
+    res.status(200).json({ message: 'OK' });
   } catch (err) {
-    console.error('❌ Error inesperado:', err.message);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('❌ Error inesperado:', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Home test
+// Test
 app.get('/', (req, res) => {
-  res.send('🟢 Servidor activo escuchando Webhooks de Twilio y ejecutando envíos a Vapi.');
+  res.send('🟢 Unicorn Server activo.');
 });
 
 app.listen(port, () => {
