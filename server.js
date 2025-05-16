@@ -36,7 +36,7 @@ setInterval(async () => {
       console.log('📨 Disparo recibido desde función local');
       try {
         const response = await axios.post(
-          'https://api.vapi.ai/message',
+          'https://unicorn-whatsapp-production.up.railway.app/webhook',
           {
             phone: row.lead_phone,
             message: row.last_message,
