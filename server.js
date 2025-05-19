@@ -39,7 +39,7 @@ app.post('/send-to-vapi', async (req, res) => {
       {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': Bearer ${process.env.VAPI_API_KEY}
+          'Authorization': `Bearer ${process.env.VAPI_API_KEY}`
         }
       }
     );
