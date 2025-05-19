@@ -13,7 +13,6 @@ const supabase = createClient(
   process.env.SUPABASE_ANON_KEY
 );
 
-// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -27,6 +26,7 @@ app.post('/webhook', async (req, res) => {
   const name = req.body.ProfileName || 'SMS User';
 
   if (!message || !phone) {
+    console.error('Faltan datos para guardar:', { message, phone });
     return res.status(400).json({ error: 'Missing message or phone' });
   }
 
@@ -39,14 +39,13 @@ app.post('/webhook', async (req, res) => {
         agent_name: name,
         status: 'New',
         created_at: new Date().toISOString(),
-        origen: 'whatsapp',
-        procesado: false
+        origen: 'whatsapp'
       }])
       .select();
 
     if (error) {
       console.error('Error al guardar en Supabase:', error);
-      return res.status(500).json({ error: 'Supabase insert error' });
+      return res.status(500).json({ error: 'Error inserting in Supabase' });
     }
 
     const inserted = data[0];
@@ -71,19 +70,15 @@ app.post('/webhook', async (req, res) => {
       }
     }
 
-    res.status(200).json({ message: 'Mensaje guardado y procesado.' });
+    console.log('✅ Lead guardado correctamente:', inserted);
+    res.status(200).json({ message: 'Mensaje procesado y guardado.' });
   } catch (err) {
-    console.error('❌ Error inesperado:', err.message);
-    res.status(500).json({ error: 'Internal error' });
+    console.error('❌ Error inesperado:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Test
-app.get('/', (req, res) => {
-  res.send('🟢 Unicorn AI Backend activo y escuchando.');
-});
-
-// 🔁 Polling para enviar mensajes de Unicorn a Vapi cada 10 segundos
+// Polling para enviar mensajes de origen "unicorn" a Vapi
 const POLLING_INTERVAL = 10000;
 
 const procesarMensajesDesdeUnicorn = async () => {
@@ -92,7 +87,7 @@ const procesarMensajesDesdeUnicorn = async () => {
       .from('conversations')
       .select('*')
       .eq('origen', 'unicorn')
-      .eq('procesado', false);
+      .eq('procesar', false);
 
     if (error) {
       console.error('❌ Error al consultar Supabase:', error.message);
@@ -127,13 +122,13 @@ const procesarMensajesDesdeUnicorn = async () => {
 
         const { error: updateError } = await supabase
           .from('conversations')
-          .update({ procesado: true })
+          .update({ procesar: true })
           .eq('id', id);
 
         if (updateError) {
           console.error(`⚠️ Error al marcar como procesado: ${updateError.message}`);
         } else {
-          console.log(`✅ Mensaje ${id} marcado como procesado.`);
+          console.log(`✅ Mensaje ${id} marcado como procesado (procesar: true).`);
         }
 
       } catch (err) {
@@ -147,7 +142,11 @@ const procesarMensajesDesdeUnicorn = async () => {
 
 setInterval(procesarMensajesDesdeUnicorn, POLLING_INTERVAL);
 
-// Iniciar servidor
+// Test route
+app.get('/', (req, res) => {
+  res.send('🟢 Unicorn AI Backend activo y escuchando.');
+});
+
 app.listen(port, () => {
   console.log(`🟢 Servidor escuchando en el puerto ${port}`);
 });
