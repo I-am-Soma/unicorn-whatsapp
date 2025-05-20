@@ -14,69 +14,50 @@ const supabase = createClient(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Webhook desde Twilio
+// ✅ Webhook que recibe mensajes desde Twilio (SMS)
 app.post('/webhook', async (req, res) => {
-  console.log('=== Webhook recibido desde Twilio ===');
+  console.log('📡 Webhook recibido');
   console.log(JSON.stringify(req.body, null, 2));
 
-  const message = req.body.Body;
-  const phone = req.body.From;
-  const name = req.body.ProfileName || 'SMS User';
+  // Si viene desde Twilio (SMS entrante)
+  if (req.body.Body && req.body.From) {
+    const message = req.body.Body;
+    const phone = req.body.From;
+    const name = req.body.ProfileName || 'SMS User';
 
-  if (!message || !phone) {
-    console.error('Faltan datos para guardar:', { message, phone });
-    return res.status(400).json({ error: 'Missing message or phone' });
-  }
+    try {
+      const { data, error } = await supabase
+        .from('conversations')
+        .insert([{
+          lead_phone: phone,
+          last_message: message,
+          agent_name: name,
+          status: 'New',
+          created_at: new Date().toISOString(),
+          origen: 'whatsapp' // Se mantiene igual por compatibilidad
+        }])
+        .select();
 
-  try {
-    const { data, error } = await supabase
-      .from('conversations')
-      .insert([{
-        lead_phone: phone,
-        last_message: message,
-        agent_name: name,
-        status: 'New',
-        created_at: new Date().toISOString(),
-        origen: 'whatsapp'
-      }])
-      .select();
-
-    if (error) {
-      console.error('Error al guardar en Supabase:', error);
-      return res.status(500).json({ error: 'Error inserting in Supabase' });
-    }
-
-    const inserted = data[0];
-
-    if (inserted.procesar) {
-      try {
-        const unicornioResponse = await axios.post(
-          process.env.UNICORNIO_URL,
-          {
-            phone: inserted.lead_phone,
-            message: inserted.last_message,
-            source: inserted.origen || 'Twilio'
-          },
-          {
-            headers: { 'Content-Type': 'application/json' }
-          }
-        );
-
-        console.log('✅ Enviado a Unicornio:', unicornioResponse.data);
-      } catch (err) {
-        console.warn('⚠️ No se pudo enviar a Unicornio:', err.message);
+      if (error) {
+        console.error('❌ Error al guardar mensaje:', error);
+        return res.status(500).json({ error: 'Error al guardar en Supabase' });
       }
-    }
 
-    console.log('✅ Lead guardado correctamente:', inserted);
-    res.status(200).json({ message: 'Mensaje procesado y guardado.' });
-  } catch (err) {
-    console.error('❌ Error inesperado:', err);
-    res.status(500).json({ error: 'Internal server error' });
+      console.log('✅ SMS guardado correctamente:', data[0]);
+      return res.status(200).json({ success: true });
+    } catch (err) {
+      console.error('❌ Error general en webhook:', err);
+      return res.status(500).json({ error: 'Error inesperado' });
+    }
   }
+
+  // Si viene desde Vapi (respuesta esperada)
+  res.status(200).json({
+    message: 'Gracias por tu mensaje. En breve un asesor te responderá.'
+  });
 });
 
-// Polling para marcar mensajes que debe leer Vapi
+// 🔁 Polling para detectar mensajes desde Unicorn y marcarlos como listos para Vapi
 const POLLING_INTERVAL = 10000;
 
 const procesarMensajesDesdeUnicorn = async () => {
@@ -111,7 +92,7 @@ const procesarMensajesDesdeUnicorn = async () => {
         if (updateError) {
           console.error(`⚠️ Error al marcar como procesado: ${updateError.message}`);
         } else {
-          console.log(`✅ Mensaje ${id} marcado como procesado (procesar: true). Vapi lo leerá vía webhook.`);
+          console.log(`✅ Mensaje ${id} marcado como procesado (procesar: true).`);
         }
 
       } catch (err) {
@@ -123,12 +104,12 @@ const procesarMensajesDesdeUnicorn = async () => {
   }
 };
 
-// Test
+// 🟢 Ruta de prueba
 app.get('/', (req, res) => {
   res.send('🟢 Unicorn AI Backend activo y escuchando.');
 });
 
-// Activar o desactivar el polling desde .env
+// ⏱️ Activar polling solo si está habilitado en .env
 if (process.env.POLLING_ACTIVO === 'true') {
   console.log('🔁 Polling activado cada 10 segundos');
   setInterval(procesarMensajesDesdeUnicorn, POLLING_INTERVAL);
@@ -136,7 +117,7 @@ if (process.env.POLLING_ACTIVO === 'true') {
   console.log('⏸️ Polling desactivado por configuración (.env)');
 }
 
-// Iniciar servidor
+// 🚀 Iniciar servidor
 app.listen(port, () => {
   console.log(`🟢 Servidor escuchando en el puerto ${port}`);
 });
