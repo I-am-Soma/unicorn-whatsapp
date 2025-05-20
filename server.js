@@ -7,7 +7,6 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 8080;
 
-// Supabase client
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_ANON_KEY
@@ -78,7 +77,7 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// Polling para enviar mensajes a Vapi
+// Polling para Vapi
 const POLLING_INTERVAL = 10000;
 
 const procesarMensajesDesdeUnicorn = async () => {
@@ -104,11 +103,11 @@ const procesarMensajesDesdeUnicorn = async () => {
 
       try {
         const vapiResponse = await axios.post(
-          'https://api.vapi.ai/calls',
+          'https://api.vapi.ai/workflows/start',
           {
+            assistant_id: '663e3aaa-8175-40a4-bf74-eb6a039b0774',
             phone_number: lead_phone,
-            user_message: last_message,
-            agent_name: agent_name || 'Unicorn AI'
+            user_message: last_message
           },
           {
             headers: {
@@ -145,7 +144,7 @@ app.get('/', (req, res) => {
   res.send('🟢 Unicorn AI Backend activo y escuchando.');
 });
 
-// Activar o desactivar polling desde .env
+// Activar o desactivar el polling desde .env
 if (process.env.POLLING_ACTIVO === 'true') {
   console.log('🔁 Polling activado cada 10 segundos');
   setInterval(procesarMensajesDesdeUnicorn, POLLING_INTERVAL);
@@ -157,3 +156,4 @@ if (process.env.POLLING_ACTIVO === 'true') {
 app.listen(port, () => {
   console.log(`🟢 Servidor escuchando en el puerto ${port}`);
 });
+
