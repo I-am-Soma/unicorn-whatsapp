@@ -78,7 +78,7 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// Polling para enviar mensajes de origen "unicorn" a Vapi
+// Polling para enviar mensajes a Vapi
 const POLLING_INTERVAL = 10000;
 
 const procesarMensajesDesdeUnicorn = async () => {
@@ -140,13 +140,20 @@ const procesarMensajesDesdeUnicorn = async () => {
   }
 };
 
-setInterval(procesarMensajesDesdeUnicorn, POLLING_INTERVAL);
-
-// Test route
+// Ruta de prueba
 app.get('/', (req, res) => {
   res.send('🟢 Unicorn AI Backend activo y escuchando.');
 });
 
+// Activar o desactivar polling desde .env
+if (process.env.POLLING_ACTIVO === 'true') {
+  console.log('🔁 Polling activado cada 10 segundos');
+  setInterval(procesarMensajesDesdeUnicorn, POLLING_INTERVAL);
+} else {
+  console.log('⏸️ Polling desactivado por configuración (.env)');
+}
+
+// Iniciar servidor
 app.listen(port, () => {
   console.log(`🟢 Servidor escuchando en el puerto ${port}`);
 });
