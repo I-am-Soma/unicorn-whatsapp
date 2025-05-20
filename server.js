@@ -1,4 +1,3 @@
-// server.js
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
@@ -77,7 +76,7 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// Polling para Vapi
+// Polling para marcar mensajes que debe leer Vapi
 const POLLING_INTERVAL = 10000;
 
 const procesarMensajesDesdeUnicorn = async () => {
@@ -99,25 +98,10 @@ const procesarMensajesDesdeUnicorn = async () => {
     }
 
     for (const mensaje of pendientes) {
-      const { id, lead_phone, last_message, agent_name } = mensaje;
+      const { id, lead_phone } = mensaje;
 
       try {
-        const vapiResponse = await axios.post(
-          'https://api.vapi.ai/workflows/start',
-          {
-            assistant_id: '663e3aaa-8175-40a4-bf74-eb6a039b0774',
-            phone_number: lead_phone,
-            user_message: last_message
-          },
-          {
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${process.env.VAPI_API_KEY}`
-            }
-          }
-        );
-
-        console.log(`📤 Enviado a Vapi (${lead_phone}) OK`);
+        console.log(`📦 Mensaje listo para Vapi: ${lead_phone}`);
 
         const { error: updateError } = await supabase
           .from('conversations')
@@ -127,11 +111,11 @@ const procesarMensajesDesdeUnicorn = async () => {
         if (updateError) {
           console.error(`⚠️ Error al marcar como procesado: ${updateError.message}`);
         } else {
-          console.log(`✅ Mensaje ${id} marcado como procesado (procesar: true).`);
+          console.log(`✅ Mensaje ${id} marcado como procesado (procesar: true). Vapi lo leerá vía webhook.`);
         }
 
       } catch (err) {
-        console.error(`❌ Error al enviar a Vapi (${lead_phone}): ${err.message}`);
+        console.error(`❌ Error general al preparar mensaje para Vapi (${lead_phone}): ${err.message}`);
       }
     }
   } catch (err) {
@@ -139,7 +123,7 @@ const procesarMensajesDesdeUnicorn = async () => {
   }
 };
 
-// Ruta de prueba
+// Test
 app.get('/', (req, res) => {
   res.send('🟢 Unicorn AI Backend activo y escuchando.');
 });
@@ -156,4 +140,3 @@ if (process.env.POLLING_ACTIVO === 'true') {
 app.listen(port, () => {
   console.log(`🟢 Servidor escuchando en el puerto ${port}`);
 });
-
