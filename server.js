@@ -1,37 +1,33 @@
-// ✅ VERSIÓN MODIFICADA — INCLUYE RESPUESTA AUTOMÁTICA PARA MENSAJES CON ORIGEN 'whatsapp'
+// ✅ VERSIÓN FINAL — CON HISTORIAL GPT Y PERSONALIZACIÓN POR CLIENTE
 
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
 const twilio = require('twilio');
+const { generarHistorialGPT } = require('./generarHistorialGPT');
 require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 8080;
 
-// Supabase
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_ANON_KEY
 );
 
-// Twilio
 const twilioClient = twilio(
   process.env.TWILIO_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
 
-// Helper para envío automático por canal
 const enviarMensajeTwilio = async (numero, mensaje) => {
   try {
     const esWhatsapp = numero.startsWith('whatsapp:');
     const telefonoNormalizado = numero.replace('whatsapp:', '');
-
     const to = esWhatsapp ? `whatsapp:${telefonoNormalizado}` : telefonoNormalizado;
     const from = esWhatsapp
       ? process.env.TWILIO_WHATSAPP_NUMBER
       : process.env.TWILIO_SMS_NUMBER;
-
     const enviado = await twilioClient.messages.create({ from, to, body: mensaje });
     console.log(`📤 Mensaje enviado a ${to} desde ${from}: ${mensaje}`);
     return enviado;
@@ -41,11 +37,9 @@ const enviarMensajeTwilio = async (numero, mensaje) => {
   }
 };
 
-// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Webhook desde Twilio (SMS entrante)
 app.post('/webhook', async (req, res) => {
   console.log('📡 Webhook recibido');
   console.log(JSON.stringify(req.body, null, 2));
@@ -59,17 +53,15 @@ app.post('/webhook', async (req, res) => {
   }
 
   try {
-    const { error } = await supabase
-      .from('conversations')
-      .insert([{
-        lead_phone: phone,
-        last_message: message,
-        agent_name: name,
-        status: 'New',
-        created_at: new Date().toISOString(),
-        origen: 'whatsapp',
-        procesar: false
-      }]);
+    const { error } = await supabase.from('conversations').insert([{
+      lead_phone: phone,
+      last_message: message,
+      agent_name: name,
+      status: 'New',
+      created_at: new Date().toISOString(),
+      origen: 'whatsapp',
+      procesar: false
+    }]);
 
     if (error) {
       console.error('❌ Error al guardar en Supabase:', error);
@@ -86,7 +78,6 @@ app.post('/webhook', async (req, res) => {
 
 const POLLING_INTERVAL = 10000;
 
-// 🔁 Polling para mensajes salientes creados por Unicorn
 const procesarMensajesDesdeUnicorn = async () => {
   try {
     const { data: pendientes, error } = await supabase
@@ -95,34 +86,22 @@ const procesarMensajesDesdeUnicorn = async () => {
       .eq('origen', 'unicorn')
       .eq('procesar', false);
 
-    if (error) {
-      console.error('❌ Error al consultar Supabase:', error.message);
-      return;
-    }
-
-    if (!pendientes || pendientes.length === 0) {
+    if (error || !pendientes || pendientes.length === 0) {
       console.log('⏳ No hay mensajes nuevos de Unicorn...');
       return;
     }
 
     for (const mensaje of pendientes) {
-      const { id, lead_phone, last_message } = mensaje;
-
+      const { id, lead_phone } = mensaje;
       try {
+        const messages = await generarHistorialGPT(lead_phone, supabase);
+        if (!messages) continue;
+
         const aiResponse = await axios.post(
           'https://api.openai.com/v1/chat/completions',
           {
             model: 'gpt-3.5-turbo',
-            messages: [
-              {
-                role: 'system',
-                content: 'Eres un asistente de ventas profesional que responde por WhatsApp y SMS. Sé amable, útil y claro. Tu objetivo es generar interés y convertir al lead en cliente.'
-              },
-              {
-                role: 'user',
-                content: last_message
-              }
-            ]
+            messages
           },
           {
             headers: {
@@ -133,14 +112,8 @@ const procesarMensajesDesdeUnicorn = async () => {
         );
 
         const textoAI = aiResponse.data.choices[0].message.content.trim();
-
         await enviarMensajeTwilio(lead_phone, textoAI);
-
-        await supabase
-          .from('conversations')
-          .update({ procesar: true })
-          .eq('id', id);
-
+        await supabase.from('conversations').update({ procesar: true }).eq('id', id);
         console.log(`✅ Mensaje ${id} marcado como procesado.`);
       } catch (err) {
         console.error(`❌ Error al procesar lead ${lead_phone}:`, err.message);
@@ -151,7 +124,6 @@ const procesarMensajesDesdeUnicorn = async () => {
   }
 };
 
-// 🔁 Polling para mensajes entrantes desde WhatsApp o SMS
 const responderMensajesEntrantes = async () => {
   try {
     const { data: mensajes, error } = await supabase
@@ -161,30 +133,22 @@ const responderMensajesEntrantes = async () => {
       .eq('procesar', false)
       .limit(10);
 
-    if (error) throw error;
-    if (!mensajes || mensajes.length === 0) {
+    if (error || !mensajes || mensajes.length === 0) {
       console.log('⏳ No hay mensajes nuevos de leads...');
       return;
     }
 
     for (const mensaje of mensajes) {
-      const { id, lead_phone, last_message } = mensaje;
-
+      const { id, lead_phone } = mensaje;
       try {
+        const messages = await generarHistorialGPT(lead_phone, supabase);
+        if (!messages) continue;
+
         const aiResponse = await axios.post(
           'https://api.openai.com/v1/chat/completions',
           {
             model: 'gpt-3.5-turbo',
-            messages: [
-              {
-                role: 'system',
-                content: 'Eres un asistente de ventas por texto. Responde de forma cálida, persuasiva y clara. Tu objetivo es cerrar ventas, resolver dudas y generar confianza.'
-              },
-              {
-                role: 'user',
-                content: last_message
-              }
-            ]
+            messages
           },
           {
             headers: {
@@ -195,14 +159,8 @@ const responderMensajesEntrantes = async () => {
         );
 
         const textoAI = aiResponse.data.choices[0].message.content.trim();
-
         await enviarMensajeTwilio(lead_phone, textoAI);
-
-        await supabase
-          .from('conversations')
-          .update({ procesar: true })
-          .eq('id', id);
-
+        await supabase.from('conversations').update({ procesar: true }).eq('id', id);
         console.log(`📩 Respuesta enviada a ${lead_phone}`);
       } catch (err) {
         console.error(`❌ Error procesando entrada de ${lead_phone}:`, err.message);
@@ -213,12 +171,10 @@ const responderMensajesEntrantes = async () => {
   }
 };
 
-// Ruta de prueba
 app.get('/', (req, res) => {
   res.send('🟢 Unicorn AI Backend activo y escuchando.');
 });
 
-// Activar polling
 if (process.env.POLLING_ACTIVO === 'true') {
   console.log('🔁 Polling activado cada 10 segundos');
   setInterval(procesarMensajesDesdeUnicorn, POLLING_INTERVAL);
@@ -227,7 +183,6 @@ if (process.env.POLLING_ACTIVO === 'true') {
   console.log('⏸️ Polling desactivado por configuración (.env)');
 }
 
-// Iniciar servidor
 app.listen(port, () => {
   console.log(`🟢 Servidor escuchando en el puerto ${port}`);
 });
