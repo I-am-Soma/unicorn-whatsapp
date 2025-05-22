@@ -1,14 +1,26 @@
-// 📦 generarHistorialGPT.js
 const generarHistorialGPT = async (leadPhone, supabase) => {
   try {
-    const { data: mensajes, error: errorConvers } = await supabase
-      .from('conversations')
-      .select('last_message, created_at, origen, cliente_id')
-      .filter('lead_phone', 'ilike', `%${leadPhone.replace(/^whatsapp:/, '').replace(/\D/g, '')}%`)
-      .order('created_at', { ascending: true });
+    const baseNumero = leadPhone.replace(/^whatsapp:/, '').replace(/\D/g, '');
 
-    if (errorConvers || !mensajes || mensajes.length === 0) {
-      console.warn('⚠️ No se encontró historial para', leadPhone);
+    // 1. Traer todos los mensajes recientes
+    const { data: todos, error } = await supabase
+      .from('conversations')
+      .select('last_message, created_at, origen, cliente_id, lead_phone')
+      .order('created_at', { ascending: true })
+      .limit(200);
+
+    if (error || !todos) {
+      console.error('❌ Error al consultar historial:', error?.message);
+      return null;
+    }
+
+    // 2. Filtrar por coincidencia numérica
+    const mensajes = todos.filter(m =>
+      m.lead_phone && m.lead_phone.replace(/\D/g, '').includes(baseNumero)
+    );
+
+    if (mensajes.length === 0) {
+      console.warn('⚠️ No se encontró historial coincidente para', baseNumero);
       return null;
     }
 
