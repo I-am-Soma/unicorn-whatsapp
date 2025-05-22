@@ -21,6 +21,26 @@ const twilioClient = twilio(
   process.env.TWILIO_AUTH_TOKEN
 );
 
+// Helper para envío automático por canal
+const enviarMensajeTwilio = async (numero, mensaje) => {
+  try {
+    const esWhatsapp = numero.startsWith('whatsapp:');
+    const telefonoNormalizado = numero.replace('whatsapp:', '');
+
+    const to = esWhatsapp ? `whatsapp:${telefonoNormalizado}` : telefonoNormalizado;
+    const from = esWhatsapp
+      ? process.env.TWILIO_WHATSAPP_NUMBER
+      : process.env.TWILIO_SMS_NUMBER;
+
+    const enviado = await twilioClient.messages.create({ from, to, body: mensaje });
+    console.log(`📤 Mensaje enviado a ${to} desde ${from}: ${mensaje}`);
+    return enviado;
+  } catch (error) {
+    console.error(`❌ Error al enviar mensaje a ${numero}:`, error.message);
+    throw error;
+  }
+};
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -114,13 +134,7 @@ const procesarMensajesDesdeUnicorn = async () => {
 
         const textoAI = aiResponse.data.choices[0].message.content.trim();
 
-        await twilioClient.messages.create({
-          from: process.env.TWILIO_PHONE,
-          to: lead_phone,
-          body: textoAI
-        });
-
-        console.log(`📤 SMS enviado a ${lead_phone}: ${textoAI}`);
+        await enviarMensajeTwilio(lead_phone, textoAI);
 
         await supabase
           .from('conversations')
@@ -182,18 +196,14 @@ const responderMensajesEntrantes = async () => {
 
         const textoAI = aiResponse.data.choices[0].message.content.trim();
 
-        await twilioClient.messages.create({
-          from: process.env.TWILIO_PHONE,
-          to: lead_phone,
-          body: textoAI
-        });
-
-        console.log(`📩 Respuesta enviada a ${lead_phone}`);
+        await enviarMensajeTwilio(lead_phone, textoAI);
 
         await supabase
           .from('conversations')
           .update({ procesar: true })
           .eq('id', id);
+
+        console.log(`📩 Respuesta enviada a ${lead_phone}`);
       } catch (err) {
         console.error(`❌ Error procesando entrada de ${lead_phone}:`, err.message);
       }
@@ -221,4 +231,3 @@ if (process.env.POLLING_ACTIVO === 'true') {
 app.listen(port, () => {
   console.log(`🟢 Servidor escuchando en el puerto ${port}`);
 });
-
