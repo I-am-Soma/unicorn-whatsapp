@@ -4,7 +4,7 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
     const { data: mensajes, error: errorConvers } = await supabase
       .from('conversations')
       .select('last_message, created_at, origen, cliente_id')
-      .ilike('lead_phone', `%${leadPhone.replace('whatsapp:', '')}%`)
+      .filter('lead_phone', 'ilike', `%${leadPhone.replace(/^whatsapp:/, '').replace(/\D/g, '')}%`)
       .order('created_at', { ascending: true });
 
     if (errorConvers || !mensajes || mensajes.length === 0) {
