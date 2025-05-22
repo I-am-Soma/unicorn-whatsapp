@@ -1,3 +1,5 @@
+// ✅ VERSIÓN MODIFICADA — INCLUYE RESPUESTA AUTOMÁTICA PARA MENSAJES CON ORIGEN 'whatsapp'
+
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
@@ -62,9 +64,9 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// Polling IA + envío SMS
 const POLLING_INTERVAL = 10000;
 
+// 🔁 Polling para mensajes salientes creados por Unicorn
 const procesarMensajesDesdeUnicorn = async () => {
   try {
     const { data: pendientes, error } = await supabase
@@ -87,7 +89,6 @@ const procesarMensajesDesdeUnicorn = async () => {
       const { id, lead_phone, last_message } = mensaje;
 
       try {
-        // 1. Generar respuesta con OpenAI
         const aiResponse = await axios.post(
           'https://api.openai.com/v1/chat/completions',
           {
@@ -95,7 +96,7 @@ const procesarMensajesDesdeUnicorn = async () => {
             messages: [
               {
                 role: 'system',
-                content: 'Eres un asistente profesional que responde amablemente por SMS.'
+                content: 'Eres un asistente de ventas profesional que responde por WhatsApp y SMS. Sé amable, útil y claro. Tu objetivo es generar interés y convertir al lead en cliente.'
               },
               {
                 role: 'user',
@@ -113,7 +114,6 @@ const procesarMensajesDesdeUnicorn = async () => {
 
         const textoAI = aiResponse.data.choices[0].message.content.trim();
 
-        // 2. Enviar por SMS usando Twilio
         await twilioClient.messages.create({
           from: process.env.TWILIO_PHONE,
           to: lead_phone,
@@ -122,7 +122,6 @@ const procesarMensajesDesdeUnicorn = async () => {
 
         console.log(`📤 SMS enviado a ${lead_phone}: ${textoAI}`);
 
-        // 3. Marcar como procesado
         await supabase
           .from('conversations')
           .update({ procesar: true })
@@ -138,6 +137,72 @@ const procesarMensajesDesdeUnicorn = async () => {
   }
 };
 
+// 🔁 Polling para mensajes entrantes desde WhatsApp o SMS
+const responderMensajesEntrantes = async () => {
+  try {
+    const { data: mensajes, error } = await supabase
+      .from('conversations')
+      .select('*')
+      .in('origen', ['whatsapp', 'sms'])
+      .eq('procesar', false)
+      .limit(10);
+
+    if (error) throw error;
+    if (!mensajes || mensajes.length === 0) {
+      console.log('⏳ No hay mensajes nuevos de leads...');
+      return;
+    }
+
+    for (const mensaje of mensajes) {
+      const { id, lead_phone, last_message } = mensaje;
+
+      try {
+        const aiResponse = await axios.post(
+          'https://api.openai.com/v1/chat/completions',
+          {
+            model: 'gpt-3.5-turbo',
+            messages: [
+              {
+                role: 'system',
+                content: 'Eres un asistente de ventas por texto. Responde de forma cálida, persuasiva y clara. Tu objetivo es cerrar ventas, resolver dudas y generar confianza.'
+              },
+              {
+                role: 'user',
+                content: last_message
+              }
+            ]
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+            }
+          }
+        );
+
+        const textoAI = aiResponse.data.choices[0].message.content.trim();
+
+        await twilioClient.messages.create({
+          from: process.env.TWILIO_PHONE,
+          to: lead_phone,
+          body: textoAI
+        });
+
+        console.log(`📩 Respuesta enviada a ${lead_phone}`);
+
+        await supabase
+          .from('conversations')
+          .update({ procesar: true })
+          .eq('id', id);
+      } catch (err) {
+        console.error(`❌ Error procesando entrada de ${lead_phone}:`, err.message);
+      }
+    }
+  } catch (err) {
+    console.error('🔥 Error en responderMensajesEntrantes:', err.message);
+  }
+};
+
 // Ruta de prueba
 app.get('/', (req, res) => {
   res.send('🟢 Unicorn AI Backend activo y escuchando.');
@@ -147,6 +212,7 @@ app.get('/', (req, res) => {
 if (process.env.POLLING_ACTIVO === 'true') {
   console.log('🔁 Polling activado cada 10 segundos');
   setInterval(procesarMensajesDesdeUnicorn, POLLING_INTERVAL);
+  setInterval(responderMensajesEntrantes, POLLING_INTERVAL);
 } else {
   console.log('⏸️ Polling desactivado por configuración (.env)');
 }
