@@ -1,4 +1,4 @@
-// ✅ VERSIÓN FINAL — CON HISTORIAL GPT Y PERSONALIZACIÓN POR CLIENTE
+// ✅ VERSIÓN FINAL + RESPUESTA GUARDADA EN SUPABASE
 
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
@@ -92,7 +92,7 @@ const procesarMensajesDesdeUnicorn = async () => {
     }
 
     for (const mensaje of pendientes) {
-      const { id, lead_phone } = mensaje;
+      const { id, lead_phone, cliente_id } = mensaje;
       try {
         const messages = await generarHistorialGPT(lead_phone, supabase);
         if (!messages) continue;
@@ -113,6 +113,20 @@ const procesarMensajesDesdeUnicorn = async () => {
 
         const textoAI = aiResponse.data.choices[0].message.content.trim();
         await enviarMensajeTwilio(lead_phone, textoAI);
+
+        await supabase.from('conversations').insert([
+          {
+            lead_phone,
+            last_message: textoAI,
+            agent_name: 'Unicorn AI',
+            status: 'In Progress',
+            created_at: new Date().toISOString(),
+            origen: 'unicorn',
+            procesar: false,
+            cliente_id: cliente_id || 1
+          }
+        ]);
+
         await supabase.from('conversations').update({ procesar: true }).eq('id', id);
         console.log(`✅ Mensaje ${id} marcado como procesado.`);
       } catch (err) {
@@ -139,7 +153,7 @@ const responderMensajesEntrantes = async () => {
     }
 
     for (const mensaje of mensajes) {
-      const { id, lead_phone } = mensaje;
+      const { id, lead_phone, cliente_id } = mensaje;
       try {
         const messages = await generarHistorialGPT(lead_phone, supabase);
         if (!messages) continue;
@@ -160,6 +174,20 @@ const responderMensajesEntrantes = async () => {
 
         const textoAI = aiResponse.data.choices[0].message.content.trim();
         await enviarMensajeTwilio(lead_phone, textoAI);
+
+        await supabase.from('conversations').insert([
+          {
+            lead_phone,
+            last_message: textoAI,
+            agent_name: 'Unicorn AI',
+            status: 'In Progress',
+            created_at: new Date().toISOString(),
+            origen: 'unicorn',
+            procesar: false,
+            cliente_id: cliente_id || 1
+          }
+        ]);
+
         await supabase.from('conversations').update({ procesar: true }).eq('id', id);
         console.log(`📩 Respuesta enviada a ${lead_phone}`);
       } catch (err) {
