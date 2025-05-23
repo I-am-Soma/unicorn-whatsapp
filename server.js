@@ -1,4 +1,4 @@
-// ✅ VERSIÓN FINAL + RESPUESTA GUARDADA EN SUPABASE
+// ✅ VERSIÓN FINAL + RESPUESTA GUARDADA EN SUPABASE (ORDEN CORREGIDO)
 
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
@@ -112,8 +112,11 @@ const procesarMensajesDesdeUnicorn = async () => {
         );
 
         const textoAI = aiResponse.data.choices[0].message.content.trim();
-        await enviarMensajeTwilio(lead_phone, textoAI);
 
+        // Primero marcar como procesado
+        await supabase.from('conversations').update({ procesar: true }).eq('id', id);
+
+        // Insertar respuesta de IA
         await supabase.from('conversations').insert([
           {
             lead_phone,
@@ -122,13 +125,13 @@ const procesarMensajesDesdeUnicorn = async () => {
             status: 'In Progress',
             created_at: new Date().toISOString(),
             origen: 'unicorn',
-            procesar: false,
+            procesar: true,
             cliente_id: cliente_id || 1
           }
         ]);
 
-        await supabase.from('conversations').update({ procesar: true }).eq('id', id);
-        console.log(`✅ Mensaje ${id} marcado como procesado.`);
+        await enviarMensajeTwilio(lead_phone, textoAI);
+
       } catch (err) {
         console.error(`❌ Error al procesar lead ${lead_phone}:`, err.message);
       }
@@ -173,7 +176,8 @@ const responderMensajesEntrantes = async () => {
         );
 
         const textoAI = aiResponse.data.choices[0].message.content.trim();
-        await enviarMensajeTwilio(lead_phone, textoAI);
+
+        await supabase.from('conversations').update({ procesar: true }).eq('id', id);
 
         await supabase.from('conversations').insert([
           {
@@ -183,13 +187,13 @@ const responderMensajesEntrantes = async () => {
             status: 'In Progress',
             created_at: new Date().toISOString(),
             origen: 'unicorn',
-            procesar: false,
+            procesar: true,
             cliente_id: cliente_id || 1
           }
         ]);
 
-        await supabase.from('conversations').update({ procesar: true }).eq('id', id);
-        console.log(`📩 Respuesta enviada a ${lead_phone}`);
+        await enviarMensajeTwilio(lead_phone, textoAI);
+
       } catch (err) {
         console.error(`❌ Error procesando entrada de ${lead_phone}:`, err.message);
       }
