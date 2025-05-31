@@ -31,8 +31,16 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
       .single();
 
     const promptBase = cliente?.prompt_inicial?.trim() || 'Eres un agente comercial proactivo. Ofreces servicios desde el primer mensaje, sin esperar a que el usuario hable.';
-    const preciosExtra = cliente?.lista_servicios?.trim()
-      ? `\nServicios disponibles:\n${cliente.lista_servicios}`
+
+    const servicios = cliente?.lista_servicios
+      ?.split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)
+      .map(line => `• ${line}`)
+      .join('\n') || '';
+
+    const preciosExtra = servicios
+      ? `\n\nServicios disponibles:\n${servicios}`
       : '';
 
     const fechaPrimerMensaje = new Date(mensajes[0].created_at);
@@ -56,7 +64,7 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
               {
                 role: 'assistant',
                 content: `Hola 👋, soy parte del equipo. Te comparto algunos de nuestros servicios:\n` +
-                         (cliente?.lista_servicios?.split('\n').slice(0, 3).join('\n') || '¿Deseas más información?')
+                         (servicios.split('\n').slice(0, 3).join('\n') || '¿Deseas más información?')
               }
             ]
       )
