@@ -2,7 +2,6 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
   try {
     const baseNumero = leadPhone.replace(/^whatsapp:/, '').replace(/\D/g, '');
 
-    // 1. Traer todos los mensajes recientes
     const { data: todos, error } = await supabase
       .from('conversations')
       .select('last_message, created_at, origen, cliente_id, lead_phone')
@@ -14,7 +13,6 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
       return null;
     }
 
-    // 2. Filtrar por coincidencia numérica
     const mensajes = todos.filter(m =>
       m.lead_phone && m.lead_phone.replace(/\D/g, '').includes(baseNumero)
     );
@@ -32,20 +30,31 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
       .eq('id', cliente_id)
       .single();
 
-    const promptBase = cliente?.prompt_inicial || 'Eres un asistente comercial que responde con cortesía y busca generar interés.';
-    const preciosExtra = cliente?.lista_servicios
-      ? ` Aquí tienes los servicios disponibles:\n${cliente.lista_servicios.map(s => `- ${s.servicio}: ${s.precio}`).join('\n')}`
+    const promptBase = cliente?.prompt_inicial?.trim() || 'Eres un agente comercial proactivo. Ofreces servicios desde el primer mensaje, sin esperar a que el usuario hable.';
+    const preciosExtra = cliente?.lista_servicios?.trim()
+      ? `\nServicios disponibles:\n${cliente.lista_servicios}`
       : '';
+
+    const hayUsuarioPrevio = mensajes.some(m => m.origen !== 'unicorn');
 
     const messages = [
       {
         role: 'system',
         content: `${promptBase}${preciosExtra}`
       },
-      ...mensajes.map(msg => ({
-        role: msg.origen === 'unicorn' ? 'assistant' : 'user',
-        content: msg.last_message
-      }))
+      ...(
+        hayUsuarioPrevio
+          ? mensajes.map(msg => ({
+              role: msg.origen === 'unicorn' ? 'assistant' : 'user',
+              content: msg.last_message?.slice(0, 300) || '' // limitar a 300 caracteres
+            }))
+          : [
+              {
+                role: 'assistant',
+                content: 'Hola 👋, soy parte del equipo de atención. Te comparto nuestros servicios disponibles para comenzar: ' + (cliente?.lista_servicios?.split('\n')[0] || 'asesoría profesional. ¿Deseas más información?')
+              }
+            ]
+      )
     ];
 
     return messages;
