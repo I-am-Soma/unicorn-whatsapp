@@ -26,22 +26,16 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
 
     const { data: cliente, error: errorCliente } = await supabase
       .from('clientes')
-      .select('prompt_inicial, lista_servicios')
+      .select('prompt_inicial, lista_servicios, nombre')
       .eq('id', cliente_id)
       .single();
 
     const promptBase = cliente?.prompt_inicial?.trim() || 'Eres un agente comercial proactivo. Ofreces servicios desde el primer mensaje, sin esperar a que el usuario hable.';
-
     const servicios = cliente?.lista_servicios
       ?.split('\n')
-      .map(line => line.trim())
-      .filter(Boolean)
-      .map(line => `• ${line}`)
-      .join('\n') || '';
-
-    const preciosExtra = servicios
-      ? `\n\nServicios disponibles:\n${servicios}`
-      : '';
+      .map(linea => `• ${linea.trim()}`)
+      .join('\n') || 'Actualmente no hay servicios cargados.';
+    const preciosExtra = `\n\nServicios disponibles:\n${servicios}`;
 
     const fechaPrimerMensaje = new Date(mensajes[0].created_at);
     const diasDesdePrimerMensaje = (Date.now() - fechaPrimerMensaje.getTime()) / (1000 * 60 * 60 * 24);
@@ -54,19 +48,17 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
         role: 'system',
         content: `${promptBase}${preciosExtra}`
       },
+      {
+        role: 'assistant',
+        content: `Hola 👋, soy parte del equipo de ${cliente?.nombre || 'nuestra empresa'}.\n\nEstos son algunos de nuestros servicios:\n${servicios}\n\n¿Hay alguno que te interese para comenzar?`
+      },
       ...(
         hayUsuarioPrevio
           ? mensajes.map(msg => ({
               role: msg.origen === 'unicorn' ? 'assistant' : 'user',
               content: msg.last_message?.slice(0, 300) || ''
             }))
-          : [
-              {
-                role: 'assistant',
-                content: `Hola 👋, soy parte del equipo. Te comparto algunos de nuestros servicios:\n` +
-                         (servicios.split('\n').slice(0, 3).join('\n') || '¿Deseas más información?')
-              }
-            ]
+          : []
       )
     ];
 
@@ -78,3 +70,4 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
 };
 
 module.exports = { generarHistorialGPT };
+
