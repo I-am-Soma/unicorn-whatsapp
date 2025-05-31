@@ -35,7 +35,11 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
       ? `\nServicios disponibles:\n${cliente.lista_servicios}`
       : '';
 
-    const hayUsuarioPrevio = mensajes.some(m => m.origen !== 'unicorn');
+    const fechaPrimerMensaje = new Date(mensajes[0].created_at);
+    const diasDesdePrimerMensaje = (Date.now() - fechaPrimerMensaje.getTime()) / (1000 * 60 * 60 * 24);
+    const ignorarHistorial = diasDesdePrimerMensaje > 7;
+
+    const hayUsuarioPrevio = mensajes.some(m => m.origen !== 'unicorn') && !ignorarHistorial;
 
     const messages = [
       {
@@ -46,12 +50,13 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
         hayUsuarioPrevio
           ? mensajes.map(msg => ({
               role: msg.origen === 'unicorn' ? 'assistant' : 'user',
-              content: msg.last_message?.slice(0, 300) || '' // limitar a 300 caracteres
+              content: msg.last_message?.slice(0, 300) || ''
             }))
           : [
               {
                 role: 'assistant',
-                content: 'Hola 👋, soy parte del equipo de atención. Te comparto nuestros servicios disponibles para comenzar: ' + (cliente?.lista_servicios?.split('\n')[0] || 'asesoría profesional. ¿Deseas más información?')
+                content: `Hola 👋, soy parte del equipo. Te comparto algunos de nuestros servicios:\n` +
+                         (cliente?.lista_servicios?.split('\n').slice(0, 3).join('\n') || '¿Deseas más información?')
               }
             ]
       )
