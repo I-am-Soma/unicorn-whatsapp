@@ -48,17 +48,18 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
         role: 'system',
         content: `${promptBase}${preciosExtra}`
       },
-      {
-        role: 'assistant',
-        content: `Hola 👋, soy parte del equipo de ${cliente?.nombre || 'nuestra empresa'}.\n\nEstos son algunos de nuestros servicios:\n${servicios}\n\n¿Hay alguno que te interese para comenzar?`
-      },
       ...(
         hayUsuarioPrevio
           ? mensajes.map(msg => ({
               role: msg.origen === 'unicorn' ? 'assistant' : 'user',
               content: msg.last_message?.slice(0, 300) || ''
             }))
-          : []
+          : [
+              {
+                role: 'user',
+                content: 'Hola, me interesa saber qué ofrecen.'
+              }
+            ]
       )
     ];
 
@@ -70,4 +71,3 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
 };
 
 module.exports = { generarHistorialGPT };
-
