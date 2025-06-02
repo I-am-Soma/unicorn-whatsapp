@@ -1,0 +1,24 @@
+// ejemplo en Node.js con Express
+app.post('/signup-callback', async (req, res) => {
+  const { userId, email } = req.body;
+
+  try {
+    const { error } = await supabase
+      .from('clientes')
+      .insert({
+        user_id: userId,
+        nombre: email,
+        prompt_inicial: 'You are a virtual assistant for this user.',
+        lista_servicios: '',
+        numero_whatsapp: '',
+        created_at: new Date().toISOString()
+      });
+
+    if (error) throw error;
+
+    res.status(200).json({ message: 'Cliente creado correctamente' });
+  } catch (err) {
+    console.error('❌ Error al crear cliente:', err);
+    res.status(500).json({ error: 'Error creando cliente' });
+  }
+});
