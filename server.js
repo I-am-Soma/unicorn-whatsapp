@@ -28,21 +28,27 @@ app.use(express.urlencoded({ extended: true }));
 
 // 🧩 Webhook de entrada de mensajes
 app.post('/webhook', async (req, res) => {
-  const { Body: message, From: phone, ProfileName: name = 'Usuario' } = req.body;
-  if (!message || !phone) return res.status(400).json({ error: 'Faltan datos' });
+  console.log('📡 Webhook recibido');
+  console.log(JSON.stringify(req.body, null, 2));
 
-  const baseNumero = phone.replace(/^whatsapp:/, '').replace(/\D/g, '');
-  let cliente_id = 1;
+  const message = req.body.Body;
+  const phone = req.body.From;
+  const name = req.body.ProfileName || 'SMS User';
 
-  const { data: cliente, error: errorCliente } = await supabase
-    .from('clientes')
-    .select('id')
-    .eq('numero_whatsapp', `+${baseNumero}`)
-    .single();
-
-  if (cliente?.id) cliente_id = cliente.id;
+  if (!message || !phone) {
+    return res.status(400).json({ error: 'Missing message or phone' });
+  }
 
   try {
+    const numero = phone.replace(/^whatsapp:/, '').replace(/\D/g, '');
+    const { data: clienteData } = await supabase
+      .from('clientes')
+      .select('id')
+      .eq('numero_whatsapp', `+${numero}`)
+      .single();
+
+    const cliente_id = clienteData?.id || 1;
+
     const { error } = await supabase.from('conversations').insert([{
       lead_phone: phone,
       last_message: message,
@@ -51,15 +57,19 @@ app.post('/webhook', async (req, res) => {
       created_at: new Date().toISOString(),
       origen: 'whatsapp',
       procesar: false,
-      cliente_id
+      cliente_id  // ✅ importante: guardar correctamente el cliente
     }]);
 
-    if (error) throw error;
-    console.log('✅ Mensaje guardado');
-    res.status(200).json({ success: true });
+    if (error) {
+      console.error('❌ Error al guardar en Supabase:', error);
+      return res.status(500).json({ error: 'Insert error' });
+    }
+
+    console.log('✅ Mensaje guardado exitosamente.');
+    return res.status(200).json({ success: true });
   } catch (err) {
-    console.error('❌ Error guardando:', err.message);
-    res.status(500).json({ error: 'Error en webhook' });
+    console.error('❌ Error en webhook:', err.message);
+    res.status(500).json({ error: 'Webhook processing failed' });
   }
 });
 
