@@ -686,6 +686,13 @@ app.get('/stats-ventas', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+if (process.env.POLLING_ACTIVO === 'true') {
+  console.log('🔁 Polling activo cada 10s');
+  setInterval(procesarMensajesDesdeUnicorn, 10000);
+  setInterval(responderMensajesEntrantesOptimizado, 10000);
+} else {
+  console.log('⏸️ Polling desactivado (.env)');
+}
 
 // 🚀 Inicio del servidor
 app.listen(port, () => {
