@@ -1,21 +1,21 @@
 // generarHistorialGPT.js - Versión optimizada para debugging y ventas
 
-// Importar Supabase - ajustar según tu estructura actual
-let supabase;
-try {
-    const supabaseClient = require('./supabaseClient');
-    supabase = supabaseClient.supabase;
-} catch (error) {
-    // Si no existe supabaseClient.js, intentar importación directa
-    try {
-        const { createClient } = require('@supabase/supabase-js');
-        supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
-        console.log('✅ [SUPABASE] Conexión directa establecida');
-    } catch (directError) {
-        console.error('❌ [SUPABASE] No se pudo establecer conexión:', directError.message);
-        throw new Error('Configuración de Supabase requerida');
-    }
+// Importar Supabase - Usando variables de entorno
+const { createClient } = require('@supabase/supabase-js');
+
+// Verificar variables de entorno
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
+    console.error('❌ [ENV] Faltan variables de entorno de Supabase');
+    console.error('- SUPABASE_URL:', process.env.SUPABASE_URL ? '✅' : '❌');
+    console.error('- SUPABASE_ANON_KEY:', process.env.SUPABASE_ANON_KEY ? '✅' : '❌');
 }
+
+const supabase = createClient(
+    process.env.SUPABASE_URL || "https://agqzpygitmgfoxrqcptg.supabase.co",
+    process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFncXpweWdpdG1nZm94cnFjcHRnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDA0MjcxMzIsImV4cCI6MjA1NjAwMzEzMn0.viDhdw0Ujc_rUXrTAluw_ZB8sfMAQEh3b61CtzorRnQ"
+);
+
+console.log('✅ [SUPABASE] Cliente configurado para backend');
 
 async function generarHistorialGPT(leadPhone, mensajeNuevo) {
     try {
