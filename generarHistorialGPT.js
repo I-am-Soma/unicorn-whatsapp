@@ -1,3 +1,4 @@
+
 const generarHistorialGPT = async (leadPhone, supabase) => {
   try {
     const baseNumero = leadPhone.replace(/^whatsapp:/, '').replace(/\D/g, '');
@@ -104,4 +105,3 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
 };
 
 module.exports = { generarHistorialGPT };
-
