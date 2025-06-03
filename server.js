@@ -36,6 +36,21 @@ const enviarMensajeTwilio = async (numero, mensaje) => {
     throw error;
   }
 };
+const obtenerClienteIdDesdeNumero = async (telefonoConPrefijo) => {
+  const numero = telefonoConPrefijo.replace(/^whatsapp:/, '').replace(/\D/g, '');
+  const { data, error } = await supabase
+    .from('clientes')
+    .select('id')
+    .eq('numero_whatsapp', `+${numero}`)
+    .single();
+
+  if (error || !data) {
+    console.warn(`⚠️ No se encontró cliente para el número +${numero}, se usará cliente_id=1`);
+    return 1;
+  }
+
+  return data.id;
+};
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -52,6 +67,8 @@ app.post('/webhook', async (req, res) => {
     return res.status(400).json({ error: 'Missing message or phone' });
   }
 
+  const cliente_id = await obtenerClienteIdDesdeNumero(phone);
+
   try {
     const { error } = await supabase.from('conversations').insert([{
       lead_phone: phone,
@@ -60,7 +77,8 @@ app.post('/webhook', async (req, res) => {
       status: 'New',
       created_at: new Date().toISOString(),
       origen: 'whatsapp',
-      procesar: false
+      procesar: false,
+      cliente_id
     }]);
 
     if (error) {
@@ -68,7 +86,7 @@ app.post('/webhook', async (req, res) => {
       return res.status(500).json({ error: 'Insert error' });
     }
 
-    console.log('✅ Mensaje guardado exitosamente.');
+    console.log(`✅ Mensaje de ${phone} asociado al cliente_id=${cliente_id} guardado correctamente.`);
     return res.status(200).json({ success: true });
   } catch (err) {
     console.error('❌ Error en webhook:', err.message);
