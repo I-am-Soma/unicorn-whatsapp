@@ -57,7 +57,7 @@ app.post('/webhook', async (req, res) => {
       created_at: new Date().toISOString(),
       origen: 'whatsapp',
       procesar: false,
-      cliente_id  // ✅ importante: guardar correctamente el cliente
+      cliente_id
     }]);
 
     if (error) {
