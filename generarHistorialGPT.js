@@ -14,24 +14,29 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
       return null;
     }
 
-    // Filtrar mensajes del mismo número
+    // Filtrar mensajes exactamente del mismo número
     const mensajes = todos.filter(m =>
-      m.lead_phone && m.lead_phone.replace(/\D/g, '').includes(baseNumero)
+      m.lead_phone && m.lead_phone.replace(/\D/g, '') === baseNumero
     );
 
-    // Si no hay mensajes coincidentes, se usa un cliente_id por default
+    // Buscar cliente_id en los mensajes
     let cliente_id = 1;
-    if (mensajes.length > 0 && mensajes[0].cliente_id) {
-      cliente_id = mensajes[0].cliente_id;
+    const clienteEnMensajes = mensajes.find(m => m.cliente_id);
+    if (clienteEnMensajes) {
+      cliente_id = clienteEnMensajes.cliente_id;
     } else {
-      // Intentar obtener cliente desde número
+      // Buscar cliente por número
       const { data: clientePorNumero, error: errCliente } = await supabase
         .from('clientes')
         .select('id')
         .eq('numero_whatsapp', `+${baseNumero}`)
         .single();
 
-      if (clientePorNumero) cliente_id = clientePorNumero.id;
+      if (clientePorNumero) {
+        cliente_id = clientePorNumero.id;
+      } else {
+        console.warn(`⚠️ No se encontró cliente para el número: +${baseNumero}`);
+      }
     }
 
     // Cargar los datos del cliente
@@ -41,8 +46,11 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
       .eq('id', cliente_id)
       .single();
 
-    // Preparar contenido del prompt personalizado
-    const promptBase = cliente?.prompt_inicial?.trim() ||
+    if (!cliente) {
+      console.warn(`⚠️ No se encontró cliente con id: ${cliente_id}. Se usará prompt genérico.`);
+    }
+
+    const promptBase = cliente?.prompt_inicial?.trim() || 
       'Eres un agente comercial proactivo. Ofreces servicios desde el primer mensaje, sin esperar a que el usuario hable.';
 
     const servicios = cliente?.lista_servicios
@@ -77,6 +85,11 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
             }
           ])
     ];
+
+    // LOG de depuración
+    console.log('🧠 Prompt usado para GPT:', promptBase);
+    console.log('📦 Lista de servicios:\n', servicios);
+    console.log('📨 Mensajes enviados a GPT:', JSON.stringify(messages, null, 2));
 
     return messages;
   } catch (err) {
