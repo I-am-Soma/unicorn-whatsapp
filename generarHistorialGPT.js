@@ -2,7 +2,6 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
   try {
     const baseNumero = leadPhone.replace(/^whatsapp:/, '').replace(/\D/g, '');
 
-    // Obtener todos los mensajes
     const { data: todos, error } = await supabase
       .from('conversations')
       .select('last_message, created_at, origen, cliente_id, lead_phone')
@@ -14,32 +13,30 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
       return null;
     }
 
-    // Filtrar mensajes exactamente del mismo número
     const mensajes = todos.filter(m =>
       m.lead_phone && m.lead_phone.replace(/\D/g, '') === baseNumero
     );
 
-    // Buscar cliente_id en los mensajes
     let cliente_id = 1;
-    const clienteEnMensajes = mensajes.find(m => m.cliente_id);
-    if (clienteEnMensajes) {
-      cliente_id = clienteEnMensajes.cliente_id;
+
+    if (mensajes.length > 0) {
+      const conCliente = mensajes.find(m => m.cliente_id);
+      cliente_id = conCliente?.cliente_id || cliente_id;
     } else {
-      // Buscar cliente por número
-      const { data: clientePorNumero, error: errCliente } = await supabase
+      const { data: clientePorNumero, error: errorClienteId } = await supabase
         .from('clientes')
         .select('id')
         .eq('numero_whatsapp', `+${baseNumero}`)
         .single();
 
-      if (clientePorNumero) {
+      if (clientePorNumero?.id) {
         cliente_id = clientePorNumero.id;
+        console.log(`✅ Cliente obtenido por número directo: ${cliente_id}`);
       } else {
-        console.warn(`⚠️ No se encontró cliente para el número: +${baseNumero}`);
+        console.warn(`⚠️ No se encontró cliente con número +${baseNumero}, usando ID 1`);
       }
     }
 
-    // Cargar los datos del cliente
     const { data: cliente, error: errorCliente } = await supabase
       .from('clientes')
       .select('prompt_inicial, lista_servicios, nombre')
@@ -47,7 +44,7 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
       .single();
 
     if (!cliente) {
-      console.warn(`⚠️ No se encontró cliente con id: ${cliente_id}. Se usará prompt genérico.`);
+      console.warn(`⚠️ No se encontró el cliente con ID ${cliente_id}, usando valores genéricos`);
     }
 
     const promptBase = cliente?.prompt_inicial?.trim() || 
@@ -65,32 +62,30 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
       ? (Date.now() - fechaPrimerMensaje.getTime()) / (1000 * 60 * 60 * 24)
       : 0;
 
-    const ignorarHistorialAntiguo = diasDesdePrimerMensaje > 7;
-    const hayUsuarioPrevio = mensajes.some(m => m.origen !== 'unicorn') && !ignorarHistorialAntiguo;
+    const ignorarHistorial = diasDesdePrimerMensaje > 7;
+    const hayUsuarioPrevio = mensajes.some(m => m.origen !== 'unicorn') && !ignorarHistorial;
 
     const messages = [
       {
         role: 'system',
         content: `${promptBase}${preciosExtra}`
       },
-      ...(hayUsuarioPrevio
-        ? mensajes.map(msg => ({
-            role: msg.origen === 'unicorn' ? 'assistant' : 'user',
-            content: msg.last_message?.slice(0, 300) || ''
-          }))
-        : [
-            {
-              role: 'user',
-              content: 'Hola, ¿me puedes decir qué servicios ofrecen?'
-            }
-          ])
+      ...(
+        hayUsuarioPrevio
+          ? mensajes.map(msg => ({
+              role: msg.origen === 'unicorn' ? 'assistant' : 'user',
+              content: msg.last_message?.slice(0, 300) || ''
+            }))
+          : [
+              {
+                role: 'user',
+                content: 'Hola, ¿me puedes decir qué servicios ofrecen?'
+              }
+            ]
+      )
     ];
 
-    // LOG de depuración
-    console.log('🧠 Prompt usado para GPT:', promptBase);
-    console.log('📦 Lista de servicios:\n', servicios);
-    console.log('📨 Mensajes enviados a GPT:', JSON.stringify(messages, null, 2));
-
+    console.log('🧠 PROMPT GPT CONSTRUIDO:', messages[0].content);
     return messages;
   } catch (err) {
     console.error('❌ Error generando historial para GPT:', err.message);
@@ -99,4 +94,3 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
 };
 
 module.exports = { generarHistorialGPT };
-
