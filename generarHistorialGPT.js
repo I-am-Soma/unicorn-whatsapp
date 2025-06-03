@@ -1,48 +1,28 @@
-
 const generarHistorialGPT = async (leadPhone, supabase) => {
   try {
     const baseNumero = leadPhone.replace(/^whatsapp:/, '').replace(/\D/g, '');
 
-    const { data: historial, error: errorHistorial } = await supabase
+    const { data: todos, error } = await supabase
       .from('conversations')
       .select('last_message, created_at, origen, cliente_id, lead_phone')
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true })
+      .limit(200);
 
-    if (errorHistorial || !historial) {
-      console.error('❌ Error al consultar historial:', errorHistorial?.message);
+    if (error || !todos) {
+      console.error('❌ Error al consultar historial:', error?.message);
       return null;
     }
 
-    const mensajes = historial.filter(m =>
-      m.lead_phone && m.lead_phone.replace(/\D/g, '') === baseNumero
+    const mensajes = todos.filter(m =>
+      m.lead_phone && m.lead_phone.replace(/\D/g, '').includes(baseNumero)
     );
 
-    let cliente_id = null;
-
-    if (mensajes.length > 0) {
-      const mensajeConCliente = mensajes.find(m => m.cliente_id);
-      if (mensajeConCliente?.cliente_id) {
-        cliente_id = mensajeConCliente.cliente_id;
-      }
-    }
-
-    if (!cliente_id) {
-      const { data: clientePorNumero, error: errorNumero } = await supabase
-        .from('clientes')
-        .select('id')
-        .eq('numero_whatsapp', `+${baseNumero}`)
-        .single();
-
-      if (clientePorNumero?.id) {
-        cliente_id = clientePorNumero.id;
-        console.log(`✅ Cliente detectado por número: ID ${cliente_id}`);
-      }
-    }
-
-    if (!cliente_id) {
-      console.warn(`❌ No se pudo asociar ningún cliente al número +${baseNumero}`);
+    if (mensajes.length === 0) {
+      console.warn('⚠️ No se encontró historial coincidente para', baseNumero);
       return null;
     }
+
+    const cliente_id = mensajes[0].cliente_id || 1;
 
     const { data: cliente, error: errorCliente } = await supabase
       .from('clientes')
@@ -50,56 +30,41 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
       .eq('id', cliente_id)
       .single();
 
-    if (!cliente) {
-      console.warn(`❌ Cliente ID ${cliente_id} no encontrado en tabla clientes`);
-      return null;
-    }
-
-    const promptBase = cliente.prompt_inicial?.trim();
-    const servicios = cliente.lista_servicios
+    const promptBase = cliente?.prompt_inicial?.trim() || 'Eres un agente comercial proactivo. Ofreces servicios desde el primer mensaje, sin esperar a que el usuario hable.';
+    const servicios = cliente?.lista_servicios
       ?.split('\n')
-      .map(s => `• ${s.trim()}`)
-      .join('\n');
+      .map(linea => `• ${linea.trim()}`)
+      .join('\n') || 'Actualmente no hay servicios cargados.';
+    const preciosExtra = `\n\nServicios disponibles:\n${servicios}`;
 
-    if (!promptBase) {
-      console.warn(`❌ Cliente ${cliente_id} no tiene prompt_inicial definido`);
-      return null;
-    }
-
-    const mensajesValidos = mensajes.filter(m => !!m.last_message);
-
-    const fechaPrimerMensaje = mensajesValidos[0]?.created_at
-      ? new Date(mensajesValidos[0].created_at)
-      : null;
-
-    const diasDesdePrimerMensaje = fechaPrimerMensaje
-      ? (Date.now() - fechaPrimerMensaje.getTime()) / (1000 * 60 * 60 * 24)
-      : 0;
-
+    const fechaPrimerMensaje = new Date(mensajes[0].created_at);
+    const diasDesdePrimerMensaje = (Date.now() - fechaPrimerMensaje.getTime()) / (1000 * 60 * 60 * 24);
     const ignorarHistorial = diasDesdePrimerMensaje > 7;
-    const hayHistorialValido = mensajesValidos.some(m => m.origen !== 'unicorn') && !ignorarHistorial;
+
+    const hayUsuarioPrevio = mensajes.some(m => m.origen !== 'unicorn') && !ignorarHistorial;
 
     const messages = [
       {
         role: 'system',
-        content: `${promptBase}\n\nServicios disponibles:\n${servicios || 'No hay servicios definidos.'}`
+        content: `${promptBase}${preciosExtra}`
       },
-      ...(hayHistorialValido
-        ? mensajesValidos.map(msg => ({
-            role: msg.origen === 'unicorn' ? 'assistant' : 'user',
-            content: msg.last_message?.slice(0, 300) || ''
-          }))
-        : [{
-            role: 'user',
-            content: 'Hola, ¿qué servicios ofrecen?'
-          }]
+      {
+        role: 'assistant',
+        content: `Hola 👋, soy parte del equipo de ${cliente?.nombre || 'nuestra empresa'}.\n\nEstos son algunos de nuestros servicios:\n${servicios}\n\n¿Hay alguno que te interese para comenzar?`
+      },
+      ...(
+        hayUsuarioPrevio
+          ? mensajes.map(msg => ({
+              role: msg.origen === 'unicorn' ? 'assistant' : 'user',
+              content: msg.last_message?.slice(0, 300) || ''
+            }))
+          : []
       )
     ];
 
-    console.log('🧠 PROMPT FINAL PARA GPT:', messages[0].content);
     return messages;
   } catch (err) {
-    console.error('❌ Error generando historial GPT:', err.message);
+    console.error('❌ Error generando historial para GPT:', err.message);
     return null;
   }
 };
