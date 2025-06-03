@@ -1,6 +1,21 @@
 // generarHistorialGPT.js - Versión optimizada para debugging y ventas
 
-const { supabase } = require('./supabaseClient');
+// Importar Supabase - ajustar según tu estructura actual
+let supabase;
+try {
+    const supabaseClient = require('./supabaseClient');
+    supabase = supabaseClient.supabase;
+} catch (error) {
+    // Si no existe supabaseClient.js, intentar importación directa
+    try {
+        const { createClient } = require('@supabase/supabase-js');
+        supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+        console.log('✅ [SUPABASE] Conexión directa establecida');
+    } catch (directError) {
+        console.error('❌ [SUPABASE] No se pudo establecer conexión:', directError.message);
+        throw new Error('Configuración de Supabase requerida');
+    }
+}
 
 async function generarHistorialGPT(leadPhone, mensajeNuevo) {
     try {
