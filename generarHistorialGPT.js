@@ -1,6 +1,19 @@
-// generarHistorialGPT.js - Versión optimizada para respuestas más directas
+// generarHistorialGPT.js - Versión CORREGIDA que no crashea
 
-const supabase = require('./supabaseClient');
+// CAMBIO: Ajustar la ruta del supabaseClient según tu estructura de archivos
+// Opciones comunes:
+const supabase = require('./supabase'); // Si tu archivo se llama supabase.js
+// const supabase = require('./config/supabase'); // Si está en carpeta config
+// const supabase = require('./db/supabase'); // Si está en carpeta db
+
+// Si no tienes el archivo, aquí está la implementación básica:
+/*
+const { createClient } = require('@supabase/supabase-js');
+const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_ANON_KEY
+);
+*/
 
 async function generarHistorialGPT(leadPhone, nuevoMensaje) {
     try {
@@ -17,7 +30,7 @@ async function generarHistorialGPT(leadPhone, nuevoMensaje) {
             console.log(`❌ Cliente no encontrado para ${leadPhone}:`, clienteError);
             return [{
                 role: 'system',
-                content: 'Eres un asistente de atención al cliente. Responde de forma profesional y concisa.'
+                content: 'Eres un asistente de atención al cliente. Responde de forma profesional y concisa en máximo 2 líneas.'
             }];
         }
 
@@ -31,38 +44,33 @@ async function generarHistorialGPT(leadPhone, nuevoMensaje) {
             .select('*')
             .eq('lead_phone', leadPhone)
             .order('created_at', { ascending: true })
-            .limit(10); // Limitar historial para evitar tokens excesivos
+            .limit(10);
 
         if (convError) {
             console.log(`❌ Error obteniendo conversaciones:`, convError);
         }
 
-        // 3. PROMPT OPTIMIZADO CON ESTRUCTURA CLARA
+        // 3. PROMPT OPTIMIZADO PERO MÁS SIMPLE
         const systemPrompt = `${clientes.prompt_inicial}
 
 SERVICIOS DISPONIBLES:
 ${clientes.lista_servicios}
 
-INSTRUCCIONES ESPECÍFICAS:
+REGLAS IMPORTANTES:
 - Responde MÁXIMO 2-3 líneas
-- Menciona servicios específicos cuando sea relevante
+- Menciona servicios específicos si preguntan
 - Sé directo y comercial
-- No divagues ni des explicaciones largas
-- Si preguntan por servicios, lista los disponibles
-- Siempre termina con una pregunta para continuar la conversación
+- Termina siempre con una pregunta`;
 
-EJEMPLO DE RESPUESTA BUENA:
-"¡Hola! Ofrecemos [servicio específico] que te puede interesar. ¿Te gustaría saber más sobre alguno en particular?"`;
-
-        // 4. Construir mensajes del historial
+        // 4. Construir mensajes
         const mensajes = [{
             role: 'system',
             content: systemPrompt
         }];
 
-        // Agregar historial previo (máximo 5 intercambios)
+        // Agregar historial previo (últimos 6 mensajes para no saturar)
         if (conversaciones && conversaciones.length > 0) {
-            const historialReciente = conversaciones.slice(-10); // Últimos 10 mensajes
+            const historialReciente = conversaciones.slice(-6);
             
             historialReciente.forEach(conv => {
                 if (conv.origen === 'lead') {
@@ -88,7 +96,7 @@ EJEMPLO DE RESPUESTA BUENA:
         }
 
         console.log(`📊 Historial generado con ${mensajes.length} mensajes`);
-        console.log(`🎯 Sistema prompt (primeros 200 chars): ${systemPrompt.substring(0, 200)}...`);
+        console.log(`🎯 Sistema prompt: ${systemPrompt.substring(0, 150)}...`);
         
         return mensajes;
 
