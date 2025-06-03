@@ -123,8 +123,10 @@ const procesarMensajesDesdeUnicorn = async () => {
         { 
           model: 'gpt-3.5-turbo', 
           messages,
-          max_tokens: 500,
-          temperature: 0.7
+          max_tokens: 150,
+temperature: 0.7,
+presence_penalty: 0.6,
+frequency_penalty: 0.3
         },
         { 
           headers: { 
