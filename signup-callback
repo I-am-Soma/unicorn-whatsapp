@@ -1,9 +1,31 @@
-// ejemplo en Node.js con Express
 app.post('/signup-callback', async (req, res) => {
   const { userId, email } = req.body;
 
   try {
-    const { error } = await supabase
+    // 1. Insertar usuario en la tabla `users` si no existe
+    const { data: existingUser, error: findError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (findError) throw findError;
+
+    if (!existingUser) {
+      const { error: insertUserError } = await supabase
+        .from('users')
+        .insert({
+          id: userId,
+          nombre: email,
+          rol: 'cliente',
+          created_at: new Date().toISOString()
+        });
+
+      if (insertUserError) throw insertUserError;
+    }
+
+    // 2. Insertar en `clientes` (ya garantizado que el user_id existe)
+    const { error: insertClienteError } = await supabase
       .from('clientes')
       .insert({
         user_id: userId,
@@ -14,11 +36,12 @@ app.post('/signup-callback', async (req, res) => {
         created_at: new Date().toISOString()
       });
 
-    if (error) throw error;
+    if (insertClienteError) throw insertClienteError;
 
     res.status(200).json({ message: 'Cliente creado correctamente' });
   } catch (err) {
-    console.error('❌ Error al crear cliente:', err);
-    res.status(500).json({ error: 'Error creando cliente' });
+    console.error('❌ Error en signup-callback:', err);
+    res.status(500).json({ error: 'Error creando usuario o cliente' });
   }
 });
+
