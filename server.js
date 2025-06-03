@@ -257,26 +257,209 @@ app.get('/', (req, res) => {
 });
 
 // Endpoint para testing manual
-app.get('/test/:phone', async (req, res) => {
-  const { phone } = req.params;
-  console.log(`🧪 Test manual para: ${phone}`);
-  
-  try {
-    const messages = await generarHistorialGPT(phone, supabase);
-    res.json({
-      success: true,
-      messages,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
+// Agregar estos endpoints a tu server.js principal
+
+// Endpoint para testear prompts específicos
+app.get('/test-prompt/:phone', async (req, res) => {
+    try {
+        const { phone } = req.params;
+        const mensaje = req.query.mensaje || "Hola, necesito información sobre sus servicios";
+        
+        console.log(`🧪 [TEST] Testing prompt para: ${phone}`);
+        
+        // Generar prompt
+        const { generarHistorialGPT } = require('./generarHistorialGPT');
+        const prompt = await generarHistorialGPT(phone, mensaje);
+        
+        if (!prompt) {
+            return res.status(404).json({
+                error: 'No se pudo generar prompt',
+                phone: phone
+            });
+        }
+        
+        // Enviar a OpenAI para test
+        const response = await openai.chat.completions.create({
+            model: "gpt-3.5-turbo",
+            messages: prompt,
+            max_tokens: 300,
+            temperature: 0.7
+        });
+        
+        const respuestaGPT = response.choices[0].message.content;
+        
+        res.json({
+            success: true,
+            phone: phone,
+            mensaje_enviado: mensaje,
+            prompt_sistema: prompt[0].content.substring(0, 500) + '...',
+            respuesta_gpt: respuestaGPT,
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('❌ [TEST] Error en test-prompt:', error);
+        res.status(500).json({ error: error.message });
+    }
 });
 
+// Endpoint para verificar configuración de cliente
+app.get('/debug-cliente/:phone', async (req, res) => {
+    try {
+        const { phone } = req.params;
+        
+        // Normalizar número
+        const numeroNormalizado = phone.startsWith('+') ? phone : `+${phone}`;
+        
+        // Buscar cliente
+        const { data: cliente, error } = await supabase
+            .from('clientes')
+            .select('*')
+            .eq('numero_whatsapp', numeroNormalizado)
+            .single();
+        
+        if (error) {
+            return res.status(404).json({
+                error: 'Cliente no encontrado',
+                phone: numeroNormalizado,
+                supabase_error: error.message
+            });
+        }
+        
+        // Procesar servicios
+        let servicios = [];
+        try {
+            servicios = typeof cliente.lista_servicios === 'string' 
+                ? JSON.parse(cliente.lista_servicios)
+                : cliente.lista_servicios || [];
+        } catch (e) {
+            servicios = [];
+        }
+        
+        res.json({
+            cliente_encontrado: true,
+            datos_cliente: {
+                id: cliente.id,
+                nombre: cliente.nombre,
+                numero_whatsapp: cliente.numero_whatsapp,
+                prompt_inicial_length: cliente.prompt_inicial?.length || 0,
+                prompt_preview: cliente.prompt_inicial?.substring(0, 200) + '...',
+                servicios_count: servicios.length,
+                servicios: servicios.map(s => ({
+                    nombre: s.nombre || s.name,
+                    precio: s.precio || s.price,
+                    descripcion: s.descripcion || s.description
+                }))
+            },
+            debug_info: {
+                numero_buscado: numeroNormalizado,
+                timestamp: new Date().toISOString()
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [DEBUG] Error en debug-cliente:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Endpoint para simular conversación completa
+app.post('/simulate-conversation', async (req, res) => {
+    try {
+        const { phone, mensajes } = req.body;
+        
+        if (!phone || !mensajes || !Array.isArray(mensajes)) {
+            return res.status(400).json({
+                error: 'Se requiere phone y mensajes (array)'
+            });
+        }
+        
+        const resultados = [];
+        
+        for (let i = 0; i < mensajes.length; i++) {
+            const mensaje = mensajes[i];
+            
+            // Generar respuesta
+            const { generarHistorialGPT } = require('./generarHistorialGPT');
+            const prompt = await generarHistorialGPT(phone, mensaje);
+            
+            if (prompt) {
+                const response = await openai.chat.completions.create({
+                    model: "gpt-3.5-turbo",
+                    messages: prompt,
+                    max_tokens: 300,
+                    temperature: 0.7
+                });
+                
+                const respuesta = response.choices[0].message.content;
+                
+                // Guardar en BD simulada (opcional)
+                await supabase
+                    .from('conversations')
+                    .insert({
+                        lead_phone: phone,
+                        last_message: respuesta,
+                        origen: 'bot',
+                        procesar: true,
+                        agent_name: 'simulation',
+                        status: 'active'
+                    });
+                
+                resultados.push({
+                    mensaje_usuario: mensaje,
+                    respuesta_bot: respuesta,
+                    paso: i + 1
+                });
+            }
+        }
+        
+        res.json({
+            success: true,
+            phone: phone,
+            conversacion: resultados,
+            total_intercambios: resultados.length
+        });
+        
+    } catch (error) {
+        console.error('❌ [SIM] Error en simulate-conversation:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Endpoint para verificar formato de números en BD
+app.get('/check-numbers-format', async (req, res) => {
+    try {
+        const { data: clientes, error } = await supabase
+            .from('clientes')
+            .select('id, nombre, numero_whatsapp');
+        
+        if (error) throw error;
+        
+        const analisis = clientes.map(cliente => ({
+            id: cliente.id,
+            nombre: cliente.nombre,
+            numero_original: cliente.numero_whatsapp,
+            formato_correcto: cliente.numero_whatsapp?.startsWith('+'),
+            sugerido: cliente.numero_whatsapp?.startsWith('+') 
+                ? cliente.numero_whatsapp 
+                : '+' + cliente.numero_whatsapp
+        }));
+        
+        const problemasFormato = analisis.filter(c => !c.formato_correcto);
+        
+        res.json({
+            total_clientes: clientes.length,
+            clientes_con_formato_correcto: analisis.length - problemasFormato.length,
+            clientes_con_problemas: problemasFormato.length,
+            detalles: analisis,
+            problemas: problemasFormato
+        });
+        
+    } catch (error) {
+        console.error('❌ [CHECK] Error verificando formatos:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
 // 🔁 Activar polling
 if (process.env.POLLING_ACTIVO === 'true') {
   console.log('🔁 Polling activo cada 10s');
