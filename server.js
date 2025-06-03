@@ -657,3 +657,38 @@ app.get('/stats-ventas', async (req, res) => {
       .from('conversations')
       .select('status, origen, created_at')
       .gte('created_at', new Date(Date.now() - 24 * 60 *
+                                  .select('status, origen, created_at')
+.gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000)); // Últimas 24h
+
+    if (error) {
+      throw error;
+    }
+
+    const resumen = {
+      total: stats.length,
+      porOrigen: stats.reduce((acc, m) => {
+        acc[m.origen] = (acc[m.origen] || 0) + 1;
+        return acc;
+      }, {}),
+      porStatus: stats.reduce((acc, m) => {
+        acc[m.status] = (acc[m.status] || 0) + 1;
+        return acc;
+      }, {})
+    };
+
+    res.json({
+      resumen,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Error en /stats-ventas:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ✅ Cierre final del servidor
+app.listen(port, () => {
+  console.log(`🟢 Servidor corriendo en puerto ${port}`);
+});
+
