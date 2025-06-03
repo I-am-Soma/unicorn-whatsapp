@@ -650,15 +650,15 @@ app.get('/test-cliente-ventas/:clienteId', async (req, res) => {
   }
 });
 
-// Endpoint para stats de conversaciones
+// Endpoint para stats de conversaciones (últimas 24 horas)
 app.get('/stats-ventas', async (req, res) => {
   try {
+    const desde = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
     const { data: stats, error } = await supabase
       .from('conversations')
       .select('status, origen, created_at')
-      .gte('created_at', new Date(Date.now() - 24 * 60 *
-                                  .select('status, origen, created_at')
-.gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000)); // Últimas 24h
+      .gte('created_at', desde);
 
     if (error) {
       throw error;
@@ -687,7 +687,7 @@ app.get('/stats-ventas', async (req, res) => {
   }
 });
 
-// ✅ Cierre final del servidor
+// 🚀 Inicio del servidor
 app.listen(port, () => {
   console.log(`🟢 Servidor corriendo en puerto ${port}`);
 });
