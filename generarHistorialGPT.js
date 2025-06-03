@@ -2,6 +2,7 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
   try {
     const baseNumero = leadPhone.replace(/^whatsapp:/, '').replace(/\D/g, '');
 
+    // Obtener todos los mensajes
     const { data: todos, error } = await supabase
       .from('conversations')
       .select('last_message, created_at, origen, cliente_id, lead_phone')
@@ -13,53 +14,68 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
       return null;
     }
 
+    // Filtrar mensajes del mismo número
     const mensajes = todos.filter(m =>
       m.lead_phone && m.lead_phone.replace(/\D/g, '').includes(baseNumero)
     );
 
-    if (mensajes.length === 0) {
-      console.warn('⚠️ No se encontró historial coincidente para', baseNumero);
-      return null;
+    // Si no hay mensajes coincidentes, se usa un cliente_id por default
+    let cliente_id = 1;
+    if (mensajes.length > 0 && mensajes[0].cliente_id) {
+      cliente_id = mensajes[0].cliente_id;
+    } else {
+      // Intentar obtener cliente desde número
+      const { data: clientePorNumero, error: errCliente } = await supabase
+        .from('clientes')
+        .select('id')
+        .eq('numero_whatsapp', `+${baseNumero}`)
+        .single();
+
+      if (clientePorNumero) cliente_id = clientePorNumero.id;
     }
 
-    const cliente_id = mensajes[0].cliente_id || 1;
-
+    // Cargar los datos del cliente
     const { data: cliente, error: errorCliente } = await supabase
       .from('clientes')
       .select('prompt_inicial, lista_servicios, nombre')
       .eq('id', cliente_id)
       .single();
 
-    const promptBase = cliente?.prompt_inicial?.trim() || 'Eres un agente comercial proactivo. Ofreces servicios desde el primer mensaje, sin esperar a que el usuario hable.';
+    // Preparar contenido del prompt personalizado
+    const promptBase = cliente?.prompt_inicial?.trim() ||
+      'Eres un agente comercial proactivo. Ofreces servicios desde el primer mensaje, sin esperar a que el usuario hable.';
+
     const servicios = cliente?.lista_servicios
       ?.split('\n')
       .map(linea => `• ${linea.trim()}`)
       .join('\n') || 'Actualmente no hay servicios cargados.';
+
     const preciosExtra = `\n\nServicios disponibles:\n${servicios}`;
 
-    const fechaPrimerMensaje = new Date(mensajes[0].created_at);
-    const diasDesdePrimerMensaje = (Date.now() - fechaPrimerMensaje.getTime()) / (1000 * 60 * 60 * 24);
-    const ignorarHistorial = diasDesdePrimerMensaje > 7;
+    const fechaPrimerMensaje = mensajes.length > 0 ? new Date(mensajes[0].created_at) : null;
+    const diasDesdePrimerMensaje = fechaPrimerMensaje
+      ? (Date.now() - fechaPrimerMensaje.getTime()) / (1000 * 60 * 60 * 24)
+      : 0;
 
-    const hayUsuarioPrevio = mensajes.some(m => m.origen !== 'unicorn') && !ignorarHistorial;
+    const ignorarHistorialAntiguo = diasDesdePrimerMensaje > 7;
+    const hayUsuarioPrevio = mensajes.some(m => m.origen !== 'unicorn') && !ignorarHistorialAntiguo;
 
     const messages = [
       {
         role: 'system',
         content: `${promptBase}${preciosExtra}`
       },
-      {
-        role: 'assistant',
-        content: `Hola 👋, soy parte del equipo de ${cliente?.nombre || 'nuestra empresa'}.\n\nEstos son algunos de nuestros servicios:\n${servicios}\n\n¿Hay alguno que te interese para comenzar?`
-      },
-      ...(
-        hayUsuarioPrevio
-          ? mensajes.map(msg => ({
-              role: msg.origen === 'unicorn' ? 'assistant' : 'user',
-              content: msg.last_message?.slice(0, 300) || ''
-            }))
-          : []
-      )
+      ...(hayUsuarioPrevio
+        ? mensajes.map(msg => ({
+            role: msg.origen === 'unicorn' ? 'assistant' : 'user',
+            content: msg.last_message?.slice(0, 300) || ''
+          }))
+        : [
+            {
+              role: 'user',
+              content: 'Hola, ¿me puedes decir qué servicios ofrecen?'
+            }
+          ])
     ];
 
     return messages;
