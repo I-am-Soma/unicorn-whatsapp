@@ -7,3 +7,4 @@ const supabase = createClient(
 );
 
 module.exports = { supabase };
+
