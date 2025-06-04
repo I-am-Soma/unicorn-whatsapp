@@ -5,17 +5,28 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
     const baseNumero = leadPhone.replace(/^whatsapp:/, '').replace(/\D/g, '');
     console.log(`📱 Número base extraído: ${baseNumero}`);
     
-    // Obtener cliente basado en el número
-    const numeroConFormato = `+${baseNumero}`;
-    const { data: clienteMatch, error: clienteError } = await supabase
-      .from('clientes')
-      .select('id, prompt_inicial, lista_servicios, nombre, numero_whatsapp')
-      .eq('numero_whatsapp', numeroConFormato)
-      .single();
+  // Buscar cliente automáticamente a partir del número (flexible, con ilike)
+try {
+  // Buscar cliente automáticamente a partir del número (flexible, con ilike)
+  const { data: clienteMatch, error: clienteError } = await supabase
+    .from('clientes')
+    .select('id, prompt_inicial, lista_servicios, nombre, numero_whatsapp')
+    .ilike('numero_whatsapp', `%${baseNumero}%`)
+    .maybeSingle();
 
-    if (clienteError && clienteError.code !== 'PGRST116') {
-      console.error('❌ Error consultando cliente:', clienteError.message);
-    }
+  if (clienteError) {
+    console.error('❌ Error buscando cliente por número:', clienteError.message);
+  }
+
+  const cliente_id = clienteMatch?.id || 1;
+  console.log(`👤 Cliente ID detectado: ${cliente_id} (${clienteMatch?.nombre || 'Cliente por defecto'})`);
+
+  // (continúa tu lógica aquí...)
+
+} catch (err) {
+  console.error('❌ Error inesperado:', err.message);
+}
+
 
     const cliente_id = clienteMatch?.id || 1;
     console.log(`👤 Cliente ID detectado: ${cliente_id} (${clienteMatch?.nombre || 'Cliente por defecto'})`);
@@ -187,36 +198,7 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
         if (servicioDestacado.precio) {
           mensajeBienvenida += ` por solo $${servicioDestacado.precio}`;
         }
-        let mensajeBienvenida = `¡Hola! 👋`;
-
-if (nombreCliente) {
-  mensajeBienvenida += ` Soy tu especialista en ${nombreCliente}.`;
-}
-
-if (serviciosProcesados.length > 0) {
-  const servicioDestacado = serviciosProcesados[0];
-  mensajeBienvenida += ` 🔥 Esta semana tenemos *${servicioDestacado.nombre}*`;
-  if (servicioDestacado.precio) {
-    mensajeBienvenida += ` por solo *$${servicioDestacado.precio}*`;
-  }
-  mensajeBienvenida += `.`;
-
-  mensajeBienvenida += `\n\n🎁 *PROMOCIÓN ESPECIAL*: Si confirmas hoy, obtienes un *10% de descuento* en tu primera cita.`;
-  mensajeBienvenida += `\n📞 ¿Quieres agendarlo ya mismo? Solo tengo *3 espacios disponibles* esta semana.`;
-  mensajeBienvenida += `\n\n✨ ¿Prefieres que agendemos para *hoy* o para *mañana*? Solo responde *"Sí"* y te lo dejo listo.`;
-
-  // Mostrar máximo 3 servicios principales
-  mensajeBienvenida += `\n\n🛍️ Otros servicios destacados:`;
-  serviciosProcesados.slice(0, 3).forEach((servicio, index) => {
-    mensajeBienvenida += `\n${index + 1}. ${servicio.nombre}`;
-    if (servicio.precio) {
-      mensajeBienvenida += ` - $${servicio.precio}`;
-    }
-  });
-} else {
-  mensajeBienvenida += ` ¿En qué puedo ayudarte a mejorar tu situación hoy?`;
-}
-
+        mensajeBienvenida += `.\n\n✨ ¿Cuál de estos servicios te interesa más?`;
         
         // Mostrar máximo 3 servicios principales
         serviciosProcesados.slice(0, 3).forEach((servicio, index) => {
@@ -268,3 +250,4 @@ if (serviciosProcesados.length > 0) {
 };
 
 module.exports = { generarHistorialGPT };
+
