@@ -5,7 +5,7 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
     const baseNumero = leadPhone.replace(/^whatsapp:/, '').replace(/\D/g, '');
     console.log(`📱 Número base extraído: ${baseNumero}`);
     
-    /// Buscar cliente automáticamente a partir del número (flexible, con ilike)
+  // Buscar cliente automáticamente a partir del número (flexible, con ilike)
 const { data: clienteMatch, error: clienteError } = await supabase
   .from('clientes')
   .select('id, prompt_inicial, lista_servicios, nombre, numero_whatsapp')
@@ -18,6 +18,7 @@ if (clienteError) {
 
 const cliente_id = clienteMatch?.id || 1;
 console.log(`👤 Cliente ID detectado: ${cliente_id} (${clienteMatch?.nombre || 'Cliente por defecto'})`);
+
     }
 
     const cliente_id = clienteMatch?.id || 1;
