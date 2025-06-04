@@ -187,7 +187,36 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
         if (servicioDestacado.precio) {
           mensajeBienvenida += ` por solo $${servicioDestacado.precio}`;
         }
-        mensajeBienvenida += `.\n\n✨ ¿Cuál de estos servicios te interesa más?`;
+        let mensajeBienvenida = `¡Hola! 👋`;
+
+if (nombreCliente) {
+  mensajeBienvenida += ` Soy tu especialista en ${nombreCliente}.`;
+}
+
+if (serviciosProcesados.length > 0) {
+  const servicioDestacado = serviciosProcesados[0];
+  mensajeBienvenida += ` 🔥 Esta semana tenemos *${servicioDestacado.nombre}*`;
+  if (servicioDestacado.precio) {
+    mensajeBienvenida += ` por solo *$${servicioDestacado.precio}*`;
+  }
+  mensajeBienvenida += `.`;
+
+  mensajeBienvenida += `\n\n🎁 *PROMOCIÓN ESPECIAL*: Si confirmas hoy, obtienes un *10% de descuento* en tu primera cita.`;
+  mensajeBienvenida += `\n📞 ¿Quieres agendarlo ya mismo? Solo tengo *3 espacios disponibles* esta semana.`;
+  mensajeBienvenida += `\n\n✨ ¿Prefieres que agendemos para *hoy* o para *mañana*? Solo responde *"Sí"* y te lo dejo listo.`;
+
+  // Mostrar máximo 3 servicios principales
+  mensajeBienvenida += `\n\n🛍️ Otros servicios destacados:`;
+  serviciosProcesados.slice(0, 3).forEach((servicio, index) => {
+    mensajeBienvenida += `\n${index + 1}. ${servicio.nombre}`;
+    if (servicio.precio) {
+      mensajeBienvenida += ` - $${servicio.precio}`;
+    }
+  });
+} else {
+  mensajeBienvenida += ` ¿En qué puedo ayudarte a mejorar tu situación hoy?`;
+}
+
         
         // Mostrar máximo 3 servicios principales
         serviciosProcesados.slice(0, 3).forEach((servicio, index) => {
