@@ -19,7 +19,9 @@ if (clienteError) {
 const cliente_id = clienteMatch?.id || 1;
 console.log(`👤 Cliente ID detectado: ${cliente_id} (${clienteMatch?.nombre || 'Cliente por defecto'})`);
 
-    }
+    } catch (err) {
+  console.error('❌ Error inesperado:', err.message);
+}
 
     const cliente_id = clienteMatch?.id || 1;
     console.log(`👤 Cliente ID detectado: ${cliente_id} (${clienteMatch?.nombre || 'Cliente por defecto'})`);
