@@ -5,28 +5,17 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
     const baseNumero = leadPhone.replace(/^whatsapp:/, '').replace(/\D/g, '');
     console.log(`📱 Número base extraído: ${baseNumero}`);
     
-  // Buscar cliente automáticamente a partir del número (flexible, con ilike)
-try {
-  // Buscar cliente automáticamente a partir del número (flexible, con ilike)
-  const { data: clienteMatch, error: clienteError } = await supabase
-    .from('clientes')
-    .select('id, prompt_inicial, lista_servicios, nombre, numero_whatsapp')
-    .ilike('numero_whatsapp', `%${baseNumero}%`)
-    .maybeSingle();
+    // Obtener cliente basado en el número
+    const numeroConFormato = `+${baseNumero}`;
+    const { data: clienteMatch, error: clienteError } = await supabase
+      .from('clientes')
+      .select('id, prompt_inicial, lista_servicios, nombre, numero_whatsapp')
+      .eq('numero_whatsapp', numeroConFormato)
+      .single();
 
-  if (clienteError) {
-    console.error('❌ Error buscando cliente por número:', clienteError.message);
-  }
-
-  const cliente_id = clienteMatch?.id || 1;
-  console.log(`👤 Cliente ID detectado: ${cliente_id} (${clienteMatch?.nombre || 'Cliente por defecto'})`);
-
-  // (continúa tu lógica aquí...)
-
-} catch (err) {
-  console.error('❌ Error inesperado:', err.message);
-}
-
+    if (clienteError && clienteError.code !== 'PGRST116') {
+      console.error('❌ Error consultando cliente:', clienteError.message);
+    }
 
     const cliente_id = clienteMatch?.id || 1;
     console.log(`👤 Cliente ID detectado: ${cliente_id} (${clienteMatch?.nombre || 'Cliente por defecto'})`);
@@ -250,4 +239,3 @@ try {
 };
 
 module.exports = { generarHistorialGPT };
-
