@@ -9,7 +9,7 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
 const { data: clienteMatch, error: clienteError } = await supabase
   .from('clientes')
   .select('id, prompt_inicial, lista_servicios, nombre, numero_whatsapp')
-  .ilike('numero_whatsapp', `%${baseNumero}`)
+  .ilike('numero_whatsapp', `%${baseNumero}%`)
   .maybeSingle();
 
 if (clienteError) {
