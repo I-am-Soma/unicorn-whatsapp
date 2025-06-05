@@ -2,6 +2,8 @@ const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
 const twilio = require('twilio');
+const fs = require('fs');
+const path = require('path');
 const { generarHistorialGPT } = require('./generarHistorialGPT');
 require('dotenv').config();
 
@@ -14,11 +16,62 @@ const twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKE
 // 🔧 PARÁMETROS OPTIMIZADOS PARA VENTAS
 const parametrosGPTVentas = {
   model: 'gpt-3.5-turbo',
-  max_tokens: 400, // Aumentado para respuestas más completas
-  temperature: 0.8, // Más creatividad para ventas persuasivas
-  presence_penalty: 0.7, // Evita repetición
-  frequency_penalty: 0.4, // Variedad en respuestas
-  top_p: 0.9 // Control de diversidad
+  max_tokens: 400,
+  temperature: 0.8,
+  presence_penalty: 0.7,
+  frequency_penalty: 0.4,
+  top_p: 0.9
+};
+
+// 🎧 FUNCIÓN PARA GENERAR AUDIO CON ELEVENLABS
+const generarAudioElevenLabs = async (texto, nombreArchivo = 'respuesta.mp3', vozId = '21m00Tcm4TlvDq8ikWAM') => {
+  try {
+    console.log(`🎤 Generando audio para texto: "${texto.substring(0, 50)}..."`);
+    
+    const response = await axios({
+      method: 'POST',
+      url: `https://api.elevenlabs.io/v1/text-to-speech/${vozId}`,
+      data: {
+        text: texto,
+        model_id: 'eleven_monolingual_v1',
+        voice_settings: {
+          stability: 0.4,
+          similarity_boost: 0.8,
+          style: 0.2, // Para conversaciones más naturales
+          use_speaker_boost: true
+        }
+      },
+      headers: {
+        'xi-api-key': process.env.ELEVENLABS_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      responseType: 'arraybuffer'
+    });
+
+    // Crear directorio de audio si no existe
+    const ruta = path.join(__dirname, 'audio');
+    if (!fs.existsSync(ruta)) {
+      fs.mkdirSync(ruta, { recursive: true });
+    }
+
+    const rutaArchivo = path.join(ruta, nombreArchivo);
+    fs.writeFileSync(rutaArchivo, response.data);
+    
+    console.log(`🎧 Audio guardado exitosamente: ${rutaArchivo}`);
+    return {
+      success: true,
+      filename: nombreArchivo,
+      path: rutaArchivo,
+      url: `${process.env.BASE_URL || 'http://localhost:8080'}/audio/${nombreArchivo}`
+    };
+    
+  } catch (error) {
+    console.error('❌ Error generando audio con ElevenLabs:', error.response?.data || error.message);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
 };
 
 // 🎯 FUNCIÓN PARA GENERAR PROMPT PERSONALIZADO DE VENTAS
@@ -78,7 +131,9 @@ const generarPromptVentasPersonalizado = (cliente, servicios = []) => {
 • "Comparar precios" → "Perfecto, nosotros ofrecemos [BENEFICIO ÚNICO] que nadie más tiene por este precio"
 
 🎯 OBJETIVO: Agendar cita o confirmar venta en máximo 5 mensajes.
-📞 Si no puedes cerrar por WhatsApp, agenda llamada INMEDIATA: "Te llamo en 2 minutos para cerrar los detalles"`;
+📞 Si no puedes cerrar por WhatsApp, agenda llamada INMEDIATA: "Te llamo en 2 minutos para cerrar los detalles"
+
+⚠️ IMPORTANTE: Mantén respuestas concisas para que puedan convertirse fácilmente a audio. Máximo 2-3 oraciones por mensaje.`;
 
   return prompt;
 };
@@ -92,7 +147,6 @@ const detectarIndustria = (nombre = '', servicios = []) => {
   
   const todasPalabras = `${nombreLower} ${serviciosTexto}`;
   
-  // Detectar industria por palabras clave
   if (/belleza|estetica|spa|salon|facial|masaje|tratamiento|piel/.test(todasPalabras)) {
     return 'belleza y estética';
   }
@@ -136,22 +190,22 @@ const detectarIntencionVenta = (mensaje) => {
 // 🎯 FUNCIÓN OPTIMIZADA PARA RESPUESTAS DE VENTAS
 const generarRespuestaVentas = async (messages, intencion) => {
   try {
-    // Parámetros dinámicos según intención
     let parametros = { ...parametrosGPTVentas };
     
     if (intencion.preguntaPrecio) {
-      parametros.temperature = 0.6; // Más preciso para precios
-      parametros.max_tokens = 500; // Más espacio para detalles
+      parametros.temperature = 0.6;
+      parametros.max_tokens = 300; // Más corto para audio
     }
     
     if (intencion.objecion) {
-      parametros.temperature = 0.7; // Balance entre creatividad y precisión
-      parametros.presence_penalty = 0.8; // Evitar respuestas genéricas
+      parametros.temperature = 0.7;
+      parametros.presence_penalty = 0.8;
+      parametros.max_tokens = 250; // Respuestas concisas
     }
     
     if (intencion.urgencia) {
-      parametros.max_tokens = 300; // Respuestas más directas
-      parametros.temperature = 0.9; // Más energía
+      parametros.max_tokens = 200; // Muy directo
+      parametros.temperature = 0.9;
     }
 
     console.log(`🎯 Parámetros GPT ajustados:`, {
@@ -179,22 +233,57 @@ const generarRespuestaVentas = async (messages, intencion) => {
   }
 };
 
-const enviarMensajeTwilio = async (numero, mensaje) => {
+// 📱 FUNCIÓN MEJORADA PARA ENVIAR MENSAJES CON AUDIO OPCIONAL
+const enviarMensajeTwilio = async (numero, mensaje, incluirAudio = false) => {
   try {
     const to = numero.startsWith('whatsapp:') ? numero : `whatsapp:${numero}`;
     const from = process.env.TWILIO_WHATSAPP_NUMBER;
-    const enviado = await twilioClient.messages.create({ from, to, body: mensaje });
+    
+    let mensajeData = { from, to, body: mensaje };
+    
+    // Si se requiere audio y está configurado ElevenLabs
+    if (incluirAudio && process.env.ELEVENLABS_API_KEY) {
+      console.log('🎧 Generando audio para el mensaje...');
+      
+      // Limpiar texto para audio (remover emojis y caracteres especiales)
+      const textoParaAudio = mensaje
+        .replace(/[🔥💰⚡🎯✅❌📞💪🚀]/g, '')
+        .replace(/\n+/g, '. ')
+        .trim();
+      
+      const nombreArchivo = `mensaje_${Date.now()}.mp3`;
+      const resultadoAudio = await generarAudioElevenLabs(textoParaAudio, nombreArchivo);
+      
+      if (resultadoAudio.success) {
+        mensajeData.mediaUrl = resultadoAudio.url;
+        console.log(`🎵 Audio adjuntado: ${resultadoAudio.url}`);
+      } else {
+        console.log('⚠️ No se pudo generar audio, enviando solo texto');
+      }
+    }
+    
+    const enviado = await twilioClient.messages.create(mensajeData);
     console.log(`📤 Enviado a ${to}: ${mensaje.substring(0, 100)}...`);
+    
+    if (incluirAudio) {
+      console.log(`🎧 ${mensajeData.mediaUrl ? 'Con audio' : 'Solo texto'}`);
+    }
+    
     return enviado;
+    
   } catch (error) {
     console.error(`❌ Error enviando a ${numero}:`, error.message);
+    throw error;
   }
 };
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 🧩 Webhook de entrada de mensajes
+// 🎧 SERVIR ARCHIVOS DE AUDIO ESTÁTICOS
+app.use('/audio', express.static(path.join(__dirname, 'audio')));
+
+// 🧩 Webhook de entrada de mensajes (MEJORADO CON AUDIO)
 app.post('/webhook', async (req, res) => {
   console.log('📡 Webhook recibido:', new Date().toISOString());
   console.log('Body:', JSON.stringify(req.body, null, 2));
@@ -209,14 +298,12 @@ app.post('/webhook', async (req, res) => {
   }
 
   try {
-    // Extraer número limpio
     const numero = phone.replace(/^whatsapp:/, '').replace(/\D/g, '');
     console.log(`📱 Número procesado: +${numero} (original: ${phone})`);
 
-    // Buscar cliente basado en el número
     const { data: clienteData, error: clienteError } = await supabase
       .from('clientes')
-      .select('id, nombre, numero_whatsapp')
+      .select('id, nombre, numero_whatsapp, audio_habilitado')
       .eq('numero_whatsapp', `+${numero}`)
       .single();
 
@@ -225,9 +312,11 @@ app.post('/webhook', async (req, res) => {
     }
 
     const cliente_id = clienteData?.id || 1;
+    const audioHabilitado = clienteData?.audio_habilitado || false;
+    
     console.log(`👤 Cliente detectado: ID ${cliente_id} - ${clienteData?.nombre || 'Cliente por defecto'}`);
+    console.log(`🎧 Audio habilitado: ${audioHabilitado ? 'SÍ' : 'NO'}`);
 
-    // Guardar mensaje en conversations
     const { error } = await supabase.from('conversations').insert([{
       lead_phone: phone,
       last_message: message,
@@ -236,7 +325,8 @@ app.post('/webhook', async (req, res) => {
       created_at: new Date().toISOString(),
       origen: 'whatsapp',
       procesar: false,
-      cliente_id
+      cliente_id,
+      audio_habilitado: audioHabilitado
     }]);
 
     if (error) {
@@ -246,13 +336,14 @@ app.post('/webhook', async (req, res) => {
 
     console.log('✅ Mensaje guardado exitosamente');
     return res.status(200).json({ success: true });
+    
   } catch (err) {
     console.error('❌ Error en webhook:', err.message);
     res.status(500).json({ error: 'Webhook processing failed' });
   }
 });
 
-// 🔄 FUNCIÓN OPTIMIZADA PARA PROCESAR MENSAJES ENTRANTES CON VENTAS
+// 🔄 FUNCIÓN OPTIMIZADA PARA PROCESAR MENSAJES ENTRANTES CON AUDIO
 const responderMensajesEntrantesOptimizado = async () => {
   const { data: mensajes, error } = await supabase
     .from('conversations')
@@ -271,14 +362,13 @@ const responderMensajesEntrantesOptimizado = async () => {
     return;
   }
 
-  console.log(`📨 Procesando ${mensajes.length} mensajes entrantes con OPTIMIZACIÓN DE VENTAS`);
+  console.log(`📨 Procesando ${mensajes.length} mensajes entrantes con OPTIMIZACIÓN DE VENTAS + AUDIO`);
 
   for (const mensaje of mensajes) {
-    const { id, lead_phone, cliente_id, last_message } = mensaje;
-    console.log(`\n📞 Procesando lead ID: ${id} de ${lead_phone}`);
+    const { id, lead_phone, cliente_id, last_message, audio_habilitado } = mensaje;
+    console.log(`\n📞 Procesando lead ID: ${id} de ${lead_phone} (Audio: ${audio_habilitado ? 'ON' : 'OFF'})`);
     
     try {
-      // Detectar intención del mensaje
       const intencion = detectarIntencionVenta(last_message || '');
       console.log(`🎯 Intención detectada:`, Object.keys(intencion).filter(k => intencion[k]).join(', ') || 'general');
 
@@ -293,7 +383,6 @@ const responderMensajesEntrantesOptimizado = async () => {
       const textoAI = await generarRespuestaVentas(messages, intencion);
       console.log(`🎯 Respuesta de AI optimizada: ${textoAI.substring(0, 100)}...`);
 
-      // Validar que la respuesta sea orientada a ventas
       const esRespuestaVentas = /\$|\d+|precio|costo|oferta|disponible|cuando|cita|reservar|llamar/i.test(textoAI);
       console.log(`💰 Respuesta orientada a ventas: ${esRespuestaVentas ? 'SÍ' : 'NO'}`);
 
@@ -309,11 +398,12 @@ const responderMensajesEntrantesOptimizado = async () => {
         created_at: new Date().toISOString(),
         origen: 'unicorn',
         procesar: true,
-        cliente_id: cliente_id || 1
+        cliente_id: cliente_id || 1,
+        audio_habilitado
       }]);
 
-      // Enviar por WhatsApp
-      await enviarMensajeTwilio(lead_phone, textoAI);
+      // Enviar por WhatsApp CON AUDIO SI ESTÁ HABILITADO
+      await enviarMensajeTwilio(lead_phone, textoAI, audio_habilitado);
       
       console.log('✅ Mensaje entrante procesado exitosamente');
       
@@ -324,14 +414,14 @@ const responderMensajesEntrantesOptimizado = async () => {
       if (err.response?.status === 429 || err.response?.status >= 500) {
         console.log('⚠️ Enviando respuesta de fallback orientada a ventas...');
         const fallbackMessage = "¡Hola! Tengo exactamente lo que necesitas. Permíteme llamarte en 5 minutos para darte precios especiales que solo ofrezco por teléfono. ¿Cuál es el mejor número para contactarte?";
-        await enviarMensajeTwilio(lead_phone, fallbackMessage);
+        await enviarMensajeTwilio(lead_phone, fallbackMessage, mensaje.audio_habilitado);
         await supabase.from('conversations').update({ procesar: true }).eq('id', id);
       }
     }
   }
 };
 
-// 🔁 Procesa mensajes salientes desde Unicorn (TAMBIÉN OPTIMIZADO)
+// 🔁 Procesa mensajes salientes desde Unicorn (CON AUDIO)
 const procesarMensajesDesdeUnicorn = async () => {
   const { data: pendientes, error } = await supabase
     .from('conversations')
@@ -349,14 +439,13 @@ const procesarMensajesDesdeUnicorn = async () => {
     return;
   }
 
-  console.log(`🤖 Procesando ${pendientes.length} mensajes de Unicorn con OPTIMIZACIÓN`);
+  console.log(`🤖 Procesando ${pendientes.length} mensajes de Unicorn con OPTIMIZACIÓN + AUDIO`);
 
   for (const mensaje of pendientes) {
-    const { id, lead_phone, cliente_id, last_message } = mensaje;
-    console.log(`\n🔄 Procesando mensaje ID: ${id} para ${lead_phone}`);
+    const { id, lead_phone, cliente_id, last_message, audio_habilitado } = mensaje;
+    console.log(`\n🔄 Procesando mensaje ID: ${id} para ${lead_phone} (Audio: ${audio_habilitado ? 'ON' : 'OFF'})`);
     
     try {
-      // Detectar intención
       const intencion = detectarIntencionVenta(last_message || '');
       
       const messages = await generarHistorialGPT(lead_phone, supabase);
@@ -382,11 +471,12 @@ const procesarMensajesDesdeUnicorn = async () => {
         created_at: new Date().toISOString(),
         origen: 'unicorn',
         procesar: true,
-        cliente_id: cliente_id || 1
+        cliente_id: cliente_id || 1,
+        audio_habilitado
       }]);
 
-      // Enviar por WhatsApp
-      await enviarMensajeTwilio(lead_phone, textoAI);
+      // Enviar por WhatsApp CON AUDIO SI ESTÁ HABILITADO
+      await enviarMensajeTwilio(lead_phone, textoAI, audio_habilitado);
       
       console.log('✅ Mensaje Unicorn procesado exitosamente');
       
@@ -396,141 +486,130 @@ const procesarMensajesDesdeUnicorn = async () => {
   }
 };
 
-// 🔄 FUNCIÓN PARA ACTUALIZAR TODOS LOS PROMPTS A ORIENTACIÓN DE VENTAS
-const actualizarPromptsAVentas = async () => {
-  try {
-    console.log('🚀 Iniciando actualización masiva de prompts a orientación de ventas...');
-    
-    // Obtener todos los clientes
-    const { data: clientes, error } = await supabase
-      .from('clientes')
-      .select('*');
-    
-    if (error) {
-      console.error('❌ Error obteniendo clientes:', error);
-      return;
-    }
-    
-    console.log(`👥 Encontrados ${clientes.length} clientes para actualizar`);
-    
-    let actualizados = 0;
-    let errores = 0;
-    
-    for (const cliente of clientes) {
-      try {
-        console.log(`\n🔧 Actualizando cliente: ${cliente.nombre} (ID: ${cliente.id})`);
-        
-        // Procesar servicios existentes
-        let serviciosProcesados = [];
-        if (cliente.lista_servicios) {
-          try {
-            serviciosProcesados = typeof cliente.lista_servicios === 'string' 
-              ? JSON.parse(cliente.lista_servicios)
-              : cliente.lista_servicios;
-          } catch (e) {
-            // Si no es JSON, procesar como texto línea por línea
-            serviciosProcesados = cliente.lista_servicios
-              .split('\n')
-              .filter(linea => linea.trim())
-              .map(linea => {
-                const match = linea.match(/(.+?)[\s-]*\$?(\d+(?:,\d{3})*(?:\.\d{2})?)/);
-                if (match) {
-                  return {
-                    nombre: match[1].replace(/^[•\-\*]\s*/, '').trim(),
-                    precio: match[2],
-                    descripcion: linea.trim()
-                  };
-                }
-                return {
-                  nombre: linea.replace(/^[•\-\*]\s*/, '').trim(),
-                  precio: null,
-                  descripcion: linea.trim()
-                };
-              });
-          }
-        }
-        
-        // Generar nuevo prompt orientado a ventas
-        const nuevoPrompt = generarPromptVentasPersonalizado(cliente, serviciosProcesados);
-        
-        // Backup del prompt anterior
-        const backupPrompt = cliente.prompt_inicial;
-        
-        // Actualizar en la base de datos
-        const { error: updateError } = await supabase
-          .from('clientes')
-          .update({ 
-            prompt_inicial: nuevoPrompt,
-            prompt_backup: backupPrompt, // Guardar backup por seguridad
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', cliente.id);
-        
-        if (updateError) {
-          console.error(`❌ Error actualizando cliente ${cliente.id}:`, updateError);
-          errores++;
-        } else {
-          console.log(`✅ Cliente ${cliente.nombre} actualizado exitosamente`);
-          console.log(`📝 Industria detectada: ${detectarIndustria(cliente.nombre, serviciosProcesados)}`);
-          console.log(`🛍️ Servicios procesados: ${serviciosProcesados.length}`);
-          actualizados++;
-        }
-        
-        // Pequeña pausa para no sobrecargar la BD
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-      } catch (err) {
-        console.error(`❌ Error procesando cliente ${cliente.id}:`, err);
-        errores++;
-      }
-    }
-    
-    console.log(`\n📊 RESUMEN DE ACTUALIZACIÓN:`);
-    console.log(`✅ Clientes actualizados: ${actualizados}`);
-    console.log(`❌ Errores: ${errores}`);
-    console.log(`📈 Tasa de éxito: ${((actualizados / clientes.length) * 100).toFixed(1)}%`);
-    
-    // Verificar algunos resultados
-    if (actualizados > 0) {
-      console.log(`\n🔍 Verificando resultados...`);
-      const { data: verificacion } = await supabase
-        .from('clientes')
-        .select('id, nombre, prompt_inicial')
-        .limit(3);
-      
-      verificacion?.forEach(cliente => {
-        const contieneVentas = /CERRAR VENTAS|ESTRATEGIA DE VENTAS|urgencia|precio|descuento/i.test(cliente.prompt_inicial);
-        console.log(`✅ ${cliente.nombre}: ${contieneVentas ? 'ORIENTADO A VENTAS' : 'NECESITA REVISIÓN'}`);
-      });
-    }
-    
-    return { actualizados, errores, total: clientes.length };
-    
-  } catch (error) {
-    console.error('❌ Error general en actualización:', error);
-    throw error;
-  }
-};
+// 🎧 ENDPOINTS PARA FUNCIONALIDAD DE AUDIO
 
-app.get('/', (req, res) => {
-  res.send('🟢 Unicorn AI backend con OPTIMIZACIONES DE VENTAS - ' + new Date().toISOString());
+// Generar audio desde texto
+app.post('/api/generar-audio', async (req, res) => {
+  try {
+    const { texto, archivo, vozId } = req.body;
+    
+    if (!texto) {
+      return res.status(400).json({ error: 'Falta el texto para generar audio' });
+    }
+
+    if (!process.env.ELEVENLABS_API_KEY) {
+      return res.status(500).json({ error: 'ElevenLabs API key no configurada' });
+    }
+
+    const nombreArchivo = archivo || `audio_${Date.now()}.mp3`;
+    const resultado = await generarAudioElevenLabs(texto, nombreArchivo, vozId);
+
+    if (!resultado.success) {
+      return res.status(500).json({ error: 'No se pudo generar el audio', details: resultado.error });
+    }
+
+    res.json({
+      success: true,
+      filename: resultado.filename,
+      url: resultado.url,
+      message: 'Audio generado exitosamente'
+    });
+
+  } catch (error) {
+    console.error('❌ Error en /api/generar-audio:', error.message);
+    res.status(500).json({ error: error.message });
+  }
 });
 
-// 🧪 ENDPOINTS DE TESTING OPTIMIZADOS
+// Habilitar/deshabilitar audio para un cliente
+app.post('/api/cliente/:clienteId/audio', async (req, res) => {
+  try {
+    const { clienteId } = req.params;
+    const { habilitado } = req.body;
 
-// Endpoint para testear respuestas optimizadas
+    const { data, error } = await supabase
+      .from('clientes')
+      .update({ audio_habilitado: habilitado })
+      .eq('id', clienteId)
+      .select();
+
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+
+    res.json({
+      success: true,
+      cliente_id: clienteId,
+      audio_habilitado: habilitado,
+      message: `Audio ${habilitado ? 'habilitado' : 'deshabilitado'} para el cliente`
+    });
+
+  } catch (error) {
+    console.error('❌ Error configurando audio del cliente:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Test de audio con diferentes voces
+app.post('/api/test-voces', async (req, res) => {
+  try {
+    const { texto } = req.body;
+    const textoTest = texto || "Hola, soy tu asistente de ventas. ¿En qué puedo ayudarte hoy?";
+
+    // Voces disponibles en ElevenLabs
+    const voces = [
+      { id: '21m00Tcm4TlvDq8ikWAM', nombre: 'Rachel', descripcion: 'Femenina, profesional' },
+      { id: 'AZnzlk1XvdvUeBnXmlld', nombre: 'Domi', descripcion: 'Femenina, joven' },
+      { id: 'EXAVITQu4vr4xnSDxMaL', nombre: 'Bella', descripcion: 'Femenina, cálida' },
+      { id: 'ErXwobaYiN019PkySvjV', nombre: 'Antoni', descripcion: 'Masculina, profesional' },
+      { id: 'VR6AewLTigWG4xSOukaG', nombre: 'Arnold', descripcion: 'Masculina, profunda' }
+    ];
+
+    const resultados = [];
+
+    for (const voz of voces) {
+      const nombreArchivo = `test_${voz.nombre.toLowerCase()}_${Date.now()}.mp3`;
+      const resultado = await generarAudioElevenLabs(textoTest, nombreArchivo, voz.id);
+      
+      resultados.push({
+        voz: voz.nombre,
+        descripcion: voz.descripcion,
+        id: voz.id,
+        success: resultado.success,
+        url: resultado.success ? resultado.url : null,
+        error: resultado.success ? null : resultado.error
+      });
+
+      // Pequeña pausa entre llamadas
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    res.json({
+      success: true,
+      texto_usado: textoTest,
+      voces_testadas: resultados,
+      message: 'Test de voces completado'
+    });
+
+  } catch (error) {
+    console.error('❌ Error en test de voces:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 🧪 ENDPOINTS DE TESTING MEJORADOS
+
 app.get('/test-respuesta-ventas/:phone', async (req, res) => {
   try {
     const { phone } = req.params;
     const mensaje = req.query.mensaje || "Hola, ¿cuánto cuesta el servicio?";
+    const incluirAudio = req.query.audio === 'true';
     
-    console.log(`🧪 Test de respuesta para ${phone} con mensaje: "${mensaje}"`);
+    console.log(`🧪 Test de respuesta para ${phone} con mensaje: "${mensaje}" (Audio: ${incluirAudio})`);
     
-    // Detectar intención
     const intencion = detectarIntencionVenta(mensaje);
     console.log('🎯 Intención detectada:', Object.keys(intencion).filter(k => intencion[k]));
     
-    // Generar historial mock
     const messages = await generarHistorialGPT(`whatsapp:${phone}`, supabase);
     
     if (!messages) {
@@ -541,161 +620,18 @@ app.get('/test-respuesta-ventas/:phone', async (req, res) => {
       });
     }
     
-    // Generar respuesta optimizada
     const respuesta = await generarRespuestaVentas(messages, intencion);
     
-    // Análisis de la respuesta
+    let audioInfo = null;
+    if (incluirAudio && process.env.ELEVENLABS_API_KEY) {
+      const textoParaAudio = respuesta.replace(/[🔥💰⚡🎯✅❌📞💪🚀]/g, '').replace(/\n+/g, '. ').trim();
+      const nombreArchivo = `test_${Date.now()}.mp3`;
+      const resultadoAudio = await generarAudioElevenLabs(textoParaAudio, nombreArchivo);
+      audioInfo = resultadoAudio;
+    }
+    
     const analisis = {
       contienePrecios: /\$|\d+|precio|costo/i.test(respuesta),
       creaUrgencia: /urgente|limitado|solo|esta semana|hoy/i.test(respuesta),
       preguntaCierre: /cuando|empezamos|confirmar|reservar/i.test(respuesta),
-      manejaObjeciones: /inversion|beneficio|facilidad|pago/i.test(respuesta)
-    };
-    
-    res.json({
-      phone,
-      mensajeOriginal: mensaje,
-      intencionDetectada: intencion,
-      respuestaGenerada: respuesta,
-      analisisVentas: analisis,
-      esOrientadaVentas: Object.values(analisis).some(v => v),
-      timestamp: new Date().toISOString()
-    });
-    
-  } catch (error) {
-    console.error('❌ Error en test de respuesta:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Endpoint para actualizar prompts masivamente
-app.post('/actualizar-prompts-ventas', async (req, res) => {
-  try {
-    console.log('🚀 Iniciando actualización masiva desde endpoint...');
-    const resultado = await actualizarPromptsAVentas();
-    res.json({
-      success: true,
-      mensaje: 'Actualización completada',
-      ...resultado,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('❌ Error en actualización masiva:', error.message);
-    res.status(500).json({ 
-      error: error.message,
-      success: false,
-      timestamp: new Date().toISOString()
-    });
-  }
-});
-
-// Endpoint para testear un cliente específico
-app.get('/test-cliente-ventas/:clienteId', async (req, res) => {
-  try {
-    const { clienteId } = req.params;
-    
-    // Obtener cliente
-    const { data: cliente, error } = await supabase
-      .from('clientes')
-      .select('*')
-      .eq('id', clienteId)
-      .single();
-    
-    if (error) {
-      return res.status(404).json({ error: 'Cliente no encontrado' });
-    }
-    
-    // Procesar servicios
-    let servicios = [];
-    if (cliente.lista_servicios) {
-      try {
-        servicios = typeof cliente.lista_servicios === 'string' 
-          ? JSON.parse(cliente.lista_servicios)
-          : cliente.lista_servicios;
-      } catch (e) {
-        servicios = [];
-      }
-    }
-    
-    // Generar prompt de ventas
-    const promptVentas = generarPromptVentasPersonalizado(cliente, servicios);
-    const industria = detectarIndustria(cliente.nombre, servicios);
-    
-    // Análisis del prompt actual
-    const promptActual = cliente.prompt_inicial || '';
-    const analisisActual = {
-      tieneEnfoqueVentas: /CERRAR VENTAS|venta|precio|oferta/i.test(promptActual),
-      creaUrgencia: /urgente|limitado|esta semana/i.test(promptActual),
-      manejaObjeciones: /objecion|objeción|caro|inversion/i.test(promptActual),
-      mencionaPrecios: /precio|\$|costo|descuento/i.test(promptActual)
-    };
-    
-    res.json({
-      cliente: {
-        id: cliente.id,
-        nombre: cliente.nombre,
-        industria
-      },
-      servicios,
-      promptActual: promptActual.substring(0, 500) + '...',
-      promptVentasGenerado: promptVentas.substring(0, 500) + '...',
-      analisisPromptActual: analisisActual,
-      necesitaActualizacion: !Object.values(analisisActual).every(v => v),
-      timestamp: new Date().toISOString()
-    });
-    
-  } catch (error) {
-    console.error('❌ Error testeando cliente:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Endpoint para stats de conversaciones (últimas 24 horas)
-app.get('/stats-ventas', async (req, res) => {
-  try {
-    const desde = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-
-    const { data: stats, error } = await supabase
-      .from('conversations')
-      .select('status, origen, created_at')
-      .gte('created_at', desde);
-
-    if (error) {
-      throw error;
-    }
-
-    const resumen = {
-      total: stats.length,
-      porOrigen: stats.reduce((acc, m) => {
-        acc[m.origen] = (acc[m.origen] || 0) + 1;
-        return acc;
-      }, {}),
-      porStatus: stats.reduce((acc, m) => {
-        acc[m.status] = (acc[m.status] || 0) + 1;
-        return acc;
-      }, {})
-    };
-
-    res.json({
-      resumen,
-      timestamp: new Date().toISOString()
-    });
-
-  } catch (error) {
-    console.error('❌ Error en /stats-ventas:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-if (process.env.POLLING_ACTIVO === 'true') {
-  console.log('🔁 Polling activo cada 10s');
-  setInterval(procesarMensajesDesdeUnicorn, 10000);
-  setInterval(responderMensajesEntrantesOptimizado, 10000);
-} else {
-  console.log('⏸️ Polling desactivado (.env)');
-}
-
-// 🚀 Inicio del servidor
-app.listen(port, () => {
-  console.log(`🟢 Servidor corriendo en puerto ${port}`);
-});
-
+      manejaObjeciones: /inversion|beneficio|facilidad|pago/i
