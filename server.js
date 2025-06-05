@@ -207,7 +207,7 @@ const guardarAudioEnSupabase = async (nombreArchivo, buffer) => {
 // 🎧 FUNCIÓN PARA GENERAR AUDIO CON ELEVENLABS Y GUARDAR EN STORAGE
 const generarAudioElevenLabs = async (texto, nombreArchivo) => {
     try {
-        const vozId = '21m00Tcm4TlvDq8ikWAM';
+        const vozId = 'zcAOhNBS3c14rBihAFp1';
         const response = await axios({
             method: 'POST',
             url: `https://api.elevenlabs.io/v1/text-to-speech/${vozId}`,
