@@ -182,17 +182,38 @@ const generarRespuestaVentas = async (messages, intencion) => {
     }
 };
 
-// 🎧 FUNCIÓN PARA GENERAR AUDIO CON ELEVENLABS
+// 📦 FUNCIÓN PARA GUARDAR AUDIO EN SUPABASE STORAGE
+const guardarAudioEnSupabase = async (nombreArchivo, buffer) => {
+    try {
+        const bucket = 'audios'; // Cambia si usas otro bucket
+        const ruta = `${nombreArchivo}`;
+
+        // Subir el archivo como tipo 'audio/mpeg'
+        const { error } = await supabase.storage.from(bucket).upload(ruta, buffer, {
+            contentType: 'audio/mpeg',
+            upsert: true
+        });
+
+        if (error) throw error;
+
+        const urlPublica = `${process.env.SUPABASE_URL}/storage/v1/object/public/${bucket}/${ruta}`;
+        return { success: true, url: urlPublica };
+    } catch (err) {
+        console.error('❌ Error subiendo audio a Supabase Storage:', err.message);
+        return { success: false, error: err.message };
+    }
+};
+
+// 🎧 FUNCIÓN PARA GENERAR AUDIO CON ELEVENLABS Y GUARDAR EN STORAGE
 const generarAudioElevenLabs = async (texto, nombreArchivo) => {
     try {
-        // ID de la voz predeterminada de ElevenLabs (Rachel)
         const vozId = '21m00Tcm4TlvDq8ikWAM';
         const response = await axios({
             method: 'POST',
             url: `https://api.elevenlabs.io/v1/text-to-speech/${vozId}`,
             data: {
                 text: texto,
-                model_id: 'eleven_monolingual_v1', // Modelo para español
+                model_id: 'eleven_monolingual_v1',
                 voice_settings: {
                     stability: 0.4,
                     similarity_boost: 0.8,
@@ -204,31 +225,21 @@ const generarAudioElevenLabs = async (texto, nombreArchivo) => {
                 'xi-api-key': process.env.ELEVENLABS_API_KEY,
                 'Content-Type': 'application/json'
             },
-            responseType: 'arraybuffer' // Para manejar el audio como bytes
+            responseType: 'arraybuffer'
         });
 
-        // Asegurarse de que el directorio 'audio' exista
-        const ruta = path.join(__dirname, 'audio');
-        if (!fs.existsSync(ruta)) fs.mkdirSync(ruta, { recursive: true });
+        const buffer = Buffer.from(response.data);
 
-        // Guardar el archivo de audio
-        const rutaArchivo = path.join(ruta, nombreArchivo);
-        fs.writeFileSync(rutaArchivo, response.data);
-        console.log(`🎧 Audio guardado en: ${rutaArchivo}`);
+        // Subir el archivo al bucket de Supabase
+        const resultadoUpload = await guardarAudioEnSupabase(nombreArchivo, buffer);
+        if (!resultadoUpload.success) return resultadoUpload;
 
-        // Construir la URL pública para Twilio
-        // BASE_URL debe estar configurado en .env (ej: https://tudominio.com o http://tuip:8080)
-        const baseUrl = process.env.BASE_URL || `http://localhost:${port}`;
-        return {
-            success: true,
-            url: `${baseUrl}/audio/${nombreArchivo}`
-        };
+        return { success: true, url: resultadoUpload.url };
     } catch (err) {
         console.error('❌ Error generando audio con ElevenLabs:', err.message);
         return { success: false, error: err.message };
     }
 };
-
 // 📤 FUNCIÓN PARA ENVIAR MENSAJES CON TWILIO (TEXTO O AUDIO)
 const enviarMensajeTwilio = async (numero, mensaje, audioUrl = null) => {
     try {
