@@ -11,7 +11,7 @@ const app = express();
 const port = process.env.PORT || 8080;
 
 // Inicialización de clientes
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
 
 // 🔧 PARÁMETROS OPTIMIZADOS PARA VENTAS GPT
