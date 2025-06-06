@@ -773,63 +773,26 @@ app.get('/test-cliente-ventas/:clienteId', async (req, res) => {
     }
 });
 
-// Endpoint para obtener estadísticas de conversaciones (últimas 24 horas)
-app.get('/stats-ventas', async (req, res) => {
+// Endpoint para actualizar prompts masivamente (útil para administradores)
+app.post('/actualizar-prompts-ventas', async (req, res) => {
     try {
-        const desde = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-
-        const { data: stats, error } = await supabase
-            .from('conversations')
-            .select('status, origen, created_at')
-            .gte('created_at', desde); // Filtrar por las últimas 24 horas
-
-        if (error) {
-            throw error;
-        }
-
-        // Resumen de estadísticas
-        const resumen = {
-            total: stats.length,
-            porOrigen: stats.reduce((acc, m) => {
-                acc[m.origen] = (acc[m.origen] || 0) + 1;
-                return acc;
-            }, {}),
-            porStatus: stats.reduce((acc, m) => {
-                acc[m.status] = (acc[m.status] || 0) + 1;
-                return acc;
-            }, {})
-        };
-
+        console.log('🚀 Iniciando actualización masiva de prompts desde endpoint...');
+        const resultado = await actualizarPromptsAVentas();
         res.json({
-            resumen,
+            success: true,
+            mensaje: 'Actualización de prompts completada',
+            ...resultado,
             timestamp: new Date().toISOString()
         });
-
     } catch (error) {
-        console.error('❌ Error en /stats-ventas:', error.message);
-        res.status(500).json({ error: error.message });
+        console.error('❌ Error en actualización masiva de prompts:', error.message);
+        res.status(500).json({
+            error: error.message,
+            success: false,
+            timestamp: new Date().toISOString()
+        });
     }
-});
-
-// 🚀 ENDPOINTS ESPECÍFICOS DE ELEVENLABS (para pruebas directas de audio)
-app.post('/api/generar-audio', async (req, res) => {
-    const { texto, archivo } = req.body;
-    if (!texto) return res.status(400).json({ error: 'Falta texto' });
-
-    // Generar un nombre de archivo único si no se proporciona
-    const nombreArchivo = archivo || audio-directo-${Date.now()}.mp3;
-    const resultado = await generarAudioElevenLabs(texto, nombreArchivo);
-    if (!resultado.success) return res.status(500).json({ error: resultado.error });
-    res.json({ url: resultado.url });
-});
-
-app.post('/webhook-test-audio', async (req, res) => {
-    const texto = req.body.text || 'Hola, este es un ejemplo de audio generado para un webhook de prueba.';
-    const nombreArchivo = webhook-prueba-${Date.now()}.mp3; // Nombre de archivo único
-    const resultado = await generarAudioElevenLabs(texto, nombreArchivo);
-    if (!resultado.success) return res.status(500).json({ error: resultado.error });
-    res.json({ audio_url: resultado.url });
-});
+}); // <-- ¡ESTA LLAVE CIERRA LA FUNCIÓN DE LA RUTA 'app.post' PROBABLEMENTE FALTABA!
 
 
 // ⏰ Configuración de Polling para procesar mensajes
@@ -845,5 +808,5 @@ if (process.env.POLLING_ACTIVO === 'true') {
 
 // 🚀 Inicio del servidor
 app.listen(port, () => {
-  console.log(🟢 Servidor corriendo en puerto ${port});
-}); 
+    console.log(`🟢 Servidor corriendo en puerto ${port}`);
+});
