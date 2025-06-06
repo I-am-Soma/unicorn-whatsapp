@@ -183,10 +183,11 @@ const generarRespuestaVentas = async (messages, intencion) => {
 };
 
 // 🎧 FUNCIÓN PARA GENERAR AUDIO CON ELEVENLABS
-const generarAudioElevenLabs = async (texto, nombreArchivo) => {
+const generarAudioElevenLabs = async (texto) => {
     try {
         // ID de la voz predeterminada de ElevenLabs (Rachel)
-        const vozId = '21m00Tcm4TlvDq8ikWAM';
+        const vozId = 'TxGEqnHWrfWFTfGW9XjX';
+
         const response = await axios({
             method: 'POST',
             url: `https://api.elevenlabs.io/v1/text-to-speech/${vozId}`,
@@ -206,6 +207,35 @@ const generarAudioElevenLabs = async (texto, nombreArchivo) => {
             },
             responseType: 'arraybuffer' // Para manejar el audio como bytes
         });
+
+        // Crear nombre aleatorio único
+        const nombreAleatorio = `audio-${Date.now()}-${Math.floor(Math.random() * 100000)}.mp3`;
+
+        // Asegurar que el directorio 'audio' exista
+        const ruta = path.join(__dirname, 'audio');
+        if (!fs.existsSync(ruta)) fs.mkdirSync(ruta, { recursive: true });
+
+        // Guardar el archivo de audio
+        const rutaArchivo = path.join(ruta, nombreAleatorio);
+        fs.writeFileSync(rutaArchivo, response.data);
+
+        // Construir la URL pública para Twilio
+        const baseUrl = process.env.BASE_URL || `http://localhost:${port}`;
+        const urlPublica = `${baseUrl}/audio/${nombreAleatorio}`;
+
+        console.log(`🎧 Audio guardado en: ${rutaArchivo}`);
+        console.log(`🎧 Audio URL generada: ${urlPublica}`);
+
+        return {
+            success: true,
+            url: urlPublica
+        };
+    } catch (err) {
+        console.error('❌ Error generando audio con ElevenLabs:', err.message);
+        return { success: false, error: err.message };
+    }
+};
+
 
         // Asegurarse de que el directorio 'audio' exista
         const ruta = path.join(__dirname, 'audio');
