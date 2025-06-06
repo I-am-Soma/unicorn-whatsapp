@@ -220,16 +220,23 @@ const generarAudioElevenLabs = async (texto) => {
         fs.writeFileSync(rutaArchivo, response.data);
 
         // Construir la URL pública para Twilio
-        const baseUrl = process.env.BASE_URL || `http://localhost:${port}`;
-        const urlPublica = `${baseUrl}/audio/${nombreAleatorio}`;
+       // Construir la URL pública para Twilio
+const baseUrl = 'https://unicorn-whatsapp-production.up.railway.app'; // Fijo para evitar fallback a localhost
 
-        console.log(`🎧 Audio guardado en: ${rutaArchivo}`);
-        console.log(`🎧 Audio URL generada: ${urlPublica}`);
+if (!baseUrl.startsWith('https://')) {
+  throw new Error('❌ BASE_URL inválida o sin HTTPS. Debe iniciar con https://');
+}
 
-        return {
-            success: true,
-            url: urlPublica
-        };
+const urlPublica = `${baseUrl}/audio/${nombreAleatorio}`.trim();
+
+console.log(`🎧 Audio guardado en: ${rutaArchivo}`);
+console.log(`🎧 Audio URL generada: ${urlPublica}`);
+
+return {
+    success: true,
+    url: urlPublica
+};
+
     } catch (err) {
         console.error('❌ Error generando audio con ElevenLabs:', err.message);
         return { success: false, error: err.message };
