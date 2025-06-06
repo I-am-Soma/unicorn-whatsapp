@@ -595,7 +595,7 @@ const actualizarPromptsAVentas = async () => {
 
         // Verificación rápida de los prompts actualizados
         if (actualizados > 0) {
-            console.log(\n🔍 Verificando algunos resultados...);
+            console.log(`\n🔍 Verificando algunos resultados...`);
             const { data: verificacion } = await supabase
                 .from('clientes')
                 .select('id, nombre, prompt_inicial')
