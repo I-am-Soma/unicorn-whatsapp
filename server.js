@@ -236,29 +236,6 @@ const generarAudioElevenLabs = async (texto) => {
     }
 };
 
-
-        // Asegurarse de que el directorio 'audio' exista
-        const ruta = path.join(__dirname, 'audio');
-        if (!fs.existsSync(ruta)) fs.mkdirSync(ruta, { recursive: true });
-
-        // Guardar el archivo de audio
-        const rutaArchivo = path.join(ruta, nombreArchivo);
-        fs.writeFileSync(rutaArchivo, response.data);
-        console.log(`🎧 Audio guardado en: ${rutaArchivo}`);
-
-        // Construir la URL pública para Twilio
-        // BASE_URL debe estar configurado en .env (ej: https://tudominio.com o http://tuip:8080)
-        const baseUrl = process.env.BASE_URL || `http://localhost:${port}`;
-        return {
-            success: true,
-            url: `${baseUrl}/audio/${nombreArchivo}`
-        };
-    } catch (err) {
-        console.error('❌ Error generando audio con ElevenLabs:', err.message);
-        return { success: false, error: err.message };
-    }
-};
-
 // 📤 FUNCIÓN PARA ENVIAR MENSAJES CON TWILIO (TEXTO O AUDIO)
 const enviarMensajeTwilio = async (numero, mensaje, audioUrl = null) => {
     try {
