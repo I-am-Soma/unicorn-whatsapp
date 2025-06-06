@@ -183,7 +183,6 @@ const generarRespuestaVentas = async (messages, intencion) => {
 };
 
 // 🎧 FUNCIÓN PARA GENERAR AUDIO CON ELEVENLABS
-// 🎧 FUNCIÓN PARA GENERAR AUDIO CON ELEVENLABS
 const generarAudioElevenLabs = async (texto, nombreArchivo) => {
     try {
         // ID de la voz predeterminada de ElevenLabs (Rachel)
@@ -357,23 +356,46 @@ const responderMensajesEntrantesOptimizado = async () => {
 
     console.log(`📨 Procesando ${mensajes.length} mensajes entrantes con OPTIMIZACIÓN DE VENTAS`);
 
-    for (const mensaje of mensajes) {
-        const { id, lead_phone, cliente_id, last_message } = mensaje;
-        console.log(`\n📞 Procesando lead ID: ${id} de ${lead_phone}`);
+    ffor (const mensaje of pendientes) {
+  const { id, lead_phone, last_message, cliente_id } = mensaje;
+  console.log(`\n🔄 Procesando mensaje de Unicorn ID: ${id} para ${lead_phone}`);
 
-        try {
-            // Detectar intención del mensaje del usuario
-            const intencion = detectarIntencionVenta(last_message || '');
-            console.log(`🎯 Intención detectada:`, Object.keys(intencion).filter(k => intencion[k]).join(', ') || 'general');
+  try {
+    // Consultar el tipo de respuesta del cliente
+    const { data: clienteData, error: clienteError } = await supabase
+      .from('clientes')
+      .select('tipo_respuesta')
+      .eq('id', cliente_id)
+      .single();
 
-            // Generar el historial de conversación para GPT
-            const messages = await generarHistorialGPT(lead_phone, supabase);
-            if (!messages) {
-                console.error('❌ No se pudo generar historial para GPT');
-                // Marcar como procesado para no intentar procesar de nuevo un historial que falla
-                await supabase.from('conversations').update({ procesar: true, status: 'Error: No Historial GPT' }).eq('id', id);
-                continue;
-            }
+    const tipoRespuesta = clienteData?.tipo_respuesta || 'texto';
+
+    let audioUrl = null;
+
+    if (process.env.SEND_AUDIO_MESSAGES === 'true' && tipoRespuesta === 'voz') {
+      console.log('🎧 Generando audio para mensaje de Unicorn saliente...');
+      const audioResult = await generarAudioElevenLabs(last_message, `unicorn-out-${id}-${Date.now()}.mp3`);
+      if (audioResult.success) {
+        audioUrl = audioResult.url;
+        console.log(`🎧 Audio URL generada: ${audioUrl}`);
+      } else {
+        console.error('❌ Fallo al generar audio, se enviará solo texto:', audioResult.error);
+      }
+    }
+
+    // Marcar el mensaje como procesado ANTES de intentar enviar para evitar duplicados
+    await supabase.from('conversations').update({ procesar: true }).eq('id', id);
+
+    // Enviar el mensaje (texto o audio) a través de Twilio
+    await enviarMensajeTwilio(lead_phone, last_message, audioUrl);
+
+    console.log('✅ Mensaje Unicorn procesado y enviado exitosamente');
+
+  } catch (err) {
+    console.error(`❌ Error procesando mensaje Unicorn saliente ${lead_phone} (ID: ${id}):`, err.message);
+    await supabase.from('conversations').update({ procesar: true, status: 'Error: Envio Unicorn' }).eq('id', id);
+  }
+}
 
             console.log('🧠 Enviando a OpenAI con parámetros optimizados...');
             const textoAI = await generarRespuestaVentas(messages, intencion);
