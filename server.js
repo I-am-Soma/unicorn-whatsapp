@@ -345,54 +345,6 @@ Tenemos promociones especiales esta semana en nuestros servicios estrella. ¿Cu�
     }
 });
 
-
-// 🔁 Procesa mensajes salientes desde Unicorn (mensajes generados por el bot que necesitan ser enviados)
-    const { data: pendientes, error } = await supabase
-        .from('conversations')
-        .select('*')
-        .eq('origen', 'unicorn')
-        .eq('procesar', false);
-
-    if (error) {
-        console.error('❌ Error consultando mensajes Unicorn pendientes:', error.message);
-        return;
-    }
-
-    if (!pendientes?.length) {
-        console.log('⏳ No hay mensajes nuevos de Unicorn para enviar...');
-        return;
-    }
-
-    console.log(`🤖 Procesando ${pendientes.length} mensajes de Unicorn para envío`);
-
-    for (const mensaje of pendientes) {
-        const { id, lead_phone, last_message, cliente_id, prefiere_audio } = mensaje;
-        console.log(`\n🔄 Procesando mensaje de Unicorn ID: ${id} para ${lead_phone}`);
-
-        try {
-            let audioUrl = null;
-            if (process.env.SEND_AUDIO_MESSAGES === 'true' && prefiere_audio) {
-                console.log('🎧 Generando audio para mensaje de Unicorn saliente...');
-                const audioResult = await generarAudioElevenLabs(last_message, `unicorn-out-${id}-${Date.now()}.mp3`);
-                if (audioResult.success) {
-                    audioUrl = audioResult.url;
-                    console.log(`🎧 Audio URL generada: ${audioUrl}`);
-                } else {
-                    console.error('❌ Fallo al generar audio, se enviará solo texto:', audioResult.error);
-                }
-            }
-
-            await supabase.from('conversations').update({ procesar: true }).eq('id', id);
-            await enviarMensajeTwilio(lead_phone, last_message, audioUrl);
-            console.log('✅ Mensaje Unicorn procesado y enviado exitosamente');
-
-        } catch (err) {
-            console.error(`❌ Error procesando mensaje Unicorn saliente ${lead_phone} (ID: ${id}):`, err.message);
-            await supabase.from('conversations').update({ procesar: true, status: 'Error: Envio Unicorn' }).eq('id', id);
-        }
-    }
-};
-
 // 🔄 FUNCIÓN OPTIMIZADA PARA PROCESAR MENSAJES ENTRANTES CON VENTAS
 // Esta función se ejecuta por polling para responder a los mensajes del cliente
 const responderMensajesEntrantesOptimizado = async () => {
