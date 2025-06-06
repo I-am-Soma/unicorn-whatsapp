@@ -485,47 +485,6 @@ const responderMensajesEntrantesOptimizado = async () => {
     }
 };
 
-// 🔁 Procesa mensajes salientes desde Unicorn (mensajes generados por el bot que necesitan ser enviados)
-// Esta función se encarga de enviar los mensajes que el propio bot ha "decidido" enviar.
-const procesarMensajesDesdeUnicorn = async () => {
-    const { data: pendientes, error } = await supabase
-        .from('conversations')
-        .select('*')
-        .eq('origen', 'unicorn') // Mensajes que se originaron desde el bot (Unicorn AI)
-        .eq('procesar', false); // Que aún no han sido enviados
-
-    if (error) {
-        console.error('❌ Error consultando mensajes Unicorn pendientes:', error.message);
-        return;
-    }
-
-    if (!pendientes?.length) {
-        console.log('⏳ No hay mensajes nuevos de Unicorn para enviar...');
-        return;
-    }
-
-    console.log(`🤖 Procesando ${pendientes.length} mensajes de Unicorn para envío`);
-
-    for (const mensaje of pendientes) {
-        const { id, lead_phone, last_message } = mensaje;
-        console.log(`\n🔄 Procesando mensaje de Unicorn ID: ${id} para ${lead_phone}`);
-
-        try {
-            // El `last_message` ya contiene el texto que el bot generó previamente
-            // y que necesita ser enviado. No se llama a GPT aquí.
-
-            let audioUrl = null;
-            if (process.env.SEND_AUDIO_MESSAGES === 'true') {
-                console.log('🎧 Generando audio para mensaje de Unicorn saliente...');
-                const audioResult = await generarAudioElevenLabs(last_message, `unicorn-out-${id}-${Date.now()}.mp3`);
-                if (audioResult.success) {
-                    audioUrl = audioResult.url;
-                    console.log(`🎧 Audio URL generada: ${audioUrl}`);
-                } else {
-                    console.error('❌ Fallo al generar audio, se enviará solo texto:', audioResult.error);
-                }
-            }
-
             // Marcar el mensaje como procesado ANTES de intentar enviar para evitar duplicados
             await supabase.from('conversations').update({ procesar: true }).eq('id', id);
 
