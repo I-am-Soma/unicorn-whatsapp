@@ -835,7 +835,6 @@ if (process.env.POLLING_ACTIVO === 'true') {
 } else {
     console.log('⏸️ Polling desactivado según configuración en .env');
 }
-
 // 🚀 Inicio del servidor
 app.listen(port, () => {
   console.log(🟢 Servidor corriendo en puerto ${port});
