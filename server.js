@@ -29,7 +29,8 @@ const generarPromptVentasPersonalizado = (cliente, servicios = []) => {
     const nombreEmpresa = cliente.nombre || 'nuestra empresa';
     const industria = detectarIndustria(cliente.nombre, servicios);
 
-    let prompt = Eres el especialista comercial principal de ${nombreEmpresa}, experto en ${industria}.
+    // ARREGLO: Cambiar ' por ` para el template literal
+    let prompt = `Eres el especialista comercial principal de ${nombreEmpresa}, experto en ${industria}.
 
 🎯 TU MISIÓN: Convertir CADA conversación en una VENTA confirmada. No solo informar, sino CERRAR VENTAS.
 
