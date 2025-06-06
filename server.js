@@ -356,7 +356,7 @@ const responderMensajesEntrantesOptimizado = async () => {
 
     console.log(`📨 Procesando ${mensajes.length} mensajes entrantes con OPTIMIZACIÓN DE VENTAS`);
 
-    ffor (const mensaje of pendientes) {
+    for (const mensaje of pendientes) {
   const { id, lead_phone, last_message, cliente_id } = mensaje;
   console.log(`\n🔄 Procesando mensaje de Unicorn ID: ${id} para ${lead_phone}`);
 
