@@ -367,7 +367,17 @@ const responderMensajesEntrantesOptimizado = async () => {
     console.log(`📨 Procesando ${mensajes.length} mensajes entrantes con OPTIMIZACIÓN DE VENTAS`);
 
     for (const mensaje of mensajes) {
-        const { id, lead_phone, cliente_id, last_message } = mensaje;
+       const { id, lead_phone, cliente_id, last_message } = mensaje;
+
+// Obtener configuración del cliente
+const { data: clienteData, error: clienteError } = await supabase
+  .from('clientes')
+  .select('tipo_respuesta')
+  .eq('id', cliente_id)
+  .single();
+
+const tipoRespuesta = clienteData?.tipo_respuesta || 'texto';
+
         console.log(`\n📞 Procesando lead ID: ${id} de ${lead_phone}`);
 
         try {
@@ -394,7 +404,19 @@ const responderMensajesEntrantesOptimizado = async () => {
 
             let audioUrl = null;
             // Generar audio si la variable de entorno está activada
-            if (process.env.SEND_AUDIO_MESSAGES === 'true') {
+            if (process.env.SEND_AUDIO_MESSAGES === 'true' && tipoRespuesta === 'voz') {
+  console.log('🎧 Cliente configurado para voz. Generando audio...');
+  const audioResult = await generarAudioElevenLabs(textoAI, `response-${id}-${Date.now()}.mp3`);
+  if (audioResult.success) {
+    audioUrl = audioResult.url;
+    console.log(`🎧 Audio URL generada: ${audioUrl}`);
+  } else {
+    console.error('❌ Fallo al generar audio, se enviará solo texto:', audioResult.error);
+  }
+} else {
+  console.log(`✉️ Cliente configurado para texto. Se enviará mensaje sin audio`);
+}
+
                 console.log('🎧 Intentando generar mensaje de audio...');
                 // Usar el ID de la conversación para un nombre de archivo único
                 const audioResult = await generarAudioElevenLabs(textoAI, `response-${id}-${Date.now()}.mp3`);
