@@ -346,7 +346,8 @@ app.post('/webhook', async (req, res) => {
 
 // SECCIÓN A REEMPLAZAR: Desde la línea ~430 hasta ~520
 // Busca esta parte en tu código y reemplázala completamente
-
+// 🔄 FUNCIÓN OPTIMIZADA PARA PROCESAR MENSAJES ENTRANTES CON VENTAS
+// Esta función se ejecuta por polling para responder a los mensajes del cliente
 const responderMensajesEntrantesOptimizado = async () => {
     const { data: mensajes, error } = await supabase
         .from('conversations')
@@ -471,8 +472,7 @@ const responderMensajesEntrantesOptimizado = async () => {
             }
         }
     }
-};
-            // Marcar el mensaje entrante como procesado
+};            // Marcar el mensaje entrante como procesado
             await supabase.from('conversations').update({
                 procesar: true,
                 status: esRespuestaVentas ? 'Sales Pitch' : 'In Progress'
