@@ -240,6 +240,7 @@ const generarAudioElevenLabs = async (texto, nombreArchivo) => {
         return { success: false, error: err.message };
     }
 };
+
 // 📤 FUNCIÓN PARA ENVIAR MENSAJES CON TWILIO (TEXTO O AUDIO)
 const enviarMensajeTwilio = async (numero, mensaje, audioUrl = null) => {
     try {
@@ -261,9 +262,11 @@ const enviarMensajeTwilio = async (numero, mensaje, audioUrl = null) => {
     } catch (error) {
         console.error(`❌ Error enviando a ${numero}:`, error.message);
         // Si falla el envío de audio, intenta enviar solo texto como fallback
-        if (audioUrl && error.message.includes('mediaUrl') || error.message.includes('Twilio')) {
+        if (audioUrl && (error.message.includes('mediaUrl') || error.message.includes('Twilio'))) {
             console.warn('⚠️ Falló envío de audio, intentando enviar solo texto como fallback...');
             try {
+                const to = numero.startsWith('whatsapp:') ? numero : `whatsapp:${numero}`;
+                const from = process.env.TWILIO_WHATSAPP_NUMBER;
                 const fallbackEnviado = await twilioClient.messages.create({ from, to, body: mensaje });
                 console.log(`✅ Fallback de texto enviado (SID: ${fallbackEnviado.sid})`);
                 return fallbackEnviado;
@@ -280,10 +283,6 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 // Servir archivos de audio estáticos desde el directorio 'audio'
 app.use('/audio', express.static(path.join(__dirname, 'audio')));
-
-// ✅ Integrar opción para voz o texto según preferencia del cliente
-
-// ✅ Integrar opción para voz o texto según preferencia del cliente
 
 // 🧩 Webhook de entrada de mensajes (para Twilio)
 app.post('/webhook', async (req, res) => {
@@ -316,22 +315,14 @@ app.post('/webhook', async (req, res) => {
         const cliente_id = clienteData?.id || 1;
         const prefiere_audio = clienteData?.prefiere_audio || false;
 
-        const mensajeInicial = `¡Hola! 👋 Soy tu asistente comercial de ${clienteData?.nombre || 'nuestra empresa'}.
-Tenemos promociones especiales esta semana en nuestros servicios estrella. ¿Cuál de estos te interesa más?
-1️⃣ Precio especial por paquete
-2️⃣ Consulta sin costo
-3️⃣ Descuento por respuesta inmediata
-
-¡Estoy aquí para ayudarte a elegir la mejor opción! 💬`;
-
-        // Inserta también el primer mensaje proactivo de Unicorn
+        // Insertar el mensaje del usuario
         await supabase.from('conversations').insert([{
             lead_phone: phone,
-            last_message: mensajeInicial,
-            agent_name: 'Unicorn AI',
-            status: 'Sales Pitch',
+            last_message: message,
+            agent_name: name,
+            status: 'New Lead',
             created_at: new Date().toISOString(),
-            origen: 'unicorn',
+            origen: 'whatsapp',
             procesar: false,
             cliente_id,
             prefiere_audio
@@ -345,106 +336,167 @@ Tenemos promociones especiales esta semana en nuestros servicios estrella. ¿Cu�
     }
 });
 
-// 🔄 FUNCIÓN OPTIMIZADA PARA PROCESAR MENSAJES ENTRANTES CON VENTAS
-// Esta función se ejecuta por polling para responder a los mensajes del cliente
-const responderMensajesEntrantesOptimizado = async () => {
-    const { data: mensajes, error } = await supabase
-        .from('conversations')
-        .select('*')
-        .in('origen', ['whatsapp', 'sms']) // Mensajes que vienen del usuario
-        .eq('procesar', false) // Que aún no han sido procesados por el bot
-        .limit(10); // Limitar para evitar sobrecarga en cada ciclo de polling
+// 🔁 FUNCIÓN PARA PROCESAR MENSAJES SALIENTES DESDE UNICORN
+const procesarMensajesDesdeUnicorn = async () => {
+    try {
+        const { data: pendientes, error } = await supabase
+            .from('conversations')
+            .select('*')
+            .eq('origen', 'unicorn')
+            .eq('procesar', false);
 
-    if (error) {
-        console.error('❌ Error consultando mensajes entrantes:', error.message);
-        return;
-    }
+        if (error) {
+            console.error('❌ Error consultando mensajes Unicorn pendientes:', error.message);
+            return;
+        }
 
-    if (!mensajes?.length) {
-        console.log('⏳ No hay nuevos leads para procesar...');
-        return;
-    }
+        if (!pendientes?.length) {
+            console.log('⏳ No hay mensajes nuevos de Unicorn para enviar...');
+            return;
+        }
 
-    console.log(`📨 Procesando ${mensajes.length} mensajes entrantes con OPTIMIZACIÓN DE VENTAS`);
+        console.log(`🤖 Procesando ${pendientes.length} mensajes de Unicorn para envío`);
 
-    for (const mensaje of mensajes) {
-        const { id, lead_phone, cliente_id, last_message } = mensaje;
-        console.log(`\n📞 Procesando lead ID: ${id} de ${lead_phone}`);
+        for (const mensaje of pendientes) {
+            const { id, lead_phone, last_message, cliente_id, prefiere_audio } = mensaje;
+            console.log(`\n🔄 Procesando mensaje de Unicorn ID: ${id} para ${lead_phone}`);
 
-        try {
-            // Detectar intención del mensaje del usuario
-            const intencion = detectarIntencionVenta(last_message || '');
-            console.log(`🎯 Intención detectada:`, Object.keys(intencion).filter(k => intencion[k]).join(', ') || 'general');
-
-            // Generar el historial de conversación para GPT
-            const messages = await generarHistorialGPT(lead_phone, supabase);
-            if (!messages) {
-                console.error('❌ No se pudo generar historial para GPT');
-                // Marcar como procesado para no intentar procesar de nuevo un historial que falla
-                await supabase.from('conversations').update({ procesar: true, status: 'Error: No Historial GPT' }).eq('id', id);
-                continue;
-            }
-
-            console.log('🧠 Enviando a OpenAI con parámetros optimizados...');
-            const textoAI = await generarRespuestaVentas(messages, intencion);
-            console.log(`🎯 Respuesta de AI optimizada (texto): ${textoAI.substring(0, Math.min(textoAI.length, 100))}...`);
-
-            // Validar si la respuesta es orientada a ventas (para estado/log)
-            const esRespuestaVentas = /\$|\d+|precio|costo|oferta|disponible|cuando|cita|reservar|llamar/i.test(textoAI);
-            console.log(`💰 Respuesta orientada a ventas: ${esRespuestaVentas ? 'SÍ' : 'NO'}`);
-
-            let audioUrl = null;
-            // Generar audio si la variable de entorno está activada
-            if (process.env.SEND_AUDIO_MESSAGES === 'true') {
-                console.log('🎧 Intentando generar mensaje de audio...');
-                // Usar el ID de la conversación para un nombre de archivo único
-                const audioResult = await generarAudioElevenLabs(textoAI, `response-${id}-${Date.now()}.mp3`);
-                if (audioResult.success) {
-                    audioUrl = audioResult.url;
-                    console.log(`🎧 Audio URL generada: ${audioUrl}`);
-                } else {
-                    console.error('❌ Fallo al generar audio, se enviará solo texto:', audioResult.error);
+            try {
+                let audioUrl = null;
+                if (process.env.SEND_AUDIO_MESSAGES === 'true' && prefiere_audio) {
+                    console.log('🎧 Generando audio para mensaje de Unicorn saliente...');
+                    const audioResult = await generarAudioElevenLabs(last_message, `unicorn-out-${id}-${Date.now()}.mp3`);
+                    if (audioResult.success) {
+                        audioUrl = audioResult.url;
+                        console.log(`🎧 Audio URL generada: ${audioUrl}`);
+                    } else {
+                        console.error('❌ Fallo al generar audio, se enviará solo texto:', audioResult.error);
+                    }
                 }
+
+                // Marcar el mensaje como procesado ANTES de intentar enviar para evitar duplicados
+                await supabase.from('conversations').update({ procesar: true }).eq('id', id);
+
+                // Enviar el mensaje (texto o audio) a través de Twilio
+                await enviarMensajeTwilio(lead_phone, last_message, audioUrl);
+
+                console.log('✅ Mensaje Unicorn procesado y enviado exitosamente');
+
+            } catch (err) {
+                console.error(`❌ Error procesando mensaje Unicorn saliente ${lead_phone} (ID: ${id}):`, err.message);
+                // Marcar como procesado con estado de error para evitar reintentos fallidos
+                await supabase.from('conversations').update({ procesar: true, status: 'Error: Envio Unicorn' }).eq('id', id);
             }
-
-            // Marcar el mensaje entrante como procesado
-            await supabase.from('conversations').update({
-                procesar: true,
-                status: esRespuestaVentas ? 'Sales Pitch' : 'In Progress'
-            }).eq('id', id);
-
-            // Insertar la respuesta del bot en la tabla 'conversations'
-            await supabase.from('conversations').insert([{
-                lead_phone,
-                last_message: textoAI,
-                agent_name: 'Unicorn AI',
-                status: esRespuestaVentas ? 'Sales Pitch' : 'In Progress',
-                created_at: new Date().toISOString(),
-                origen: 'unicorn', // Indicar que este mensaje fue generado por el bot
-                procesar: true, // Ya fue generado y procesado para envío, no necesita re-procesar por polling 'unicorn'
-                cliente_id: cliente_id || 1
-            }]);
-
-            // Enviar la respuesta (texto o audio) al cliente vía Twilio
-            await enviarMensajeTwilio(lead_phone, textoAI, audioUrl);
-
-            console.log('✅ Mensaje entrante procesado y respuesta enviada exitosamente');
-
-        } catch (err) {
-            console.error(`❌ Error procesando entrada ${lead_phone} (ID: ${id}):`, err.message);
-
-            // Fallback de respuesta en caso de error crítico con OpenAI u otro servicio
-            if (err.message.includes('OpenAI') || err.message.includes('ElevenLabs') || err.message.includes('timeout')) {
-                console.log('⚠️ Enviando respuesta de fallback orientada a ventas debido a error de AI/servicio...');
-                const fallbackMessage = "¡Hola! Algo inesperado sucedió. Tengo exactamente lo que necesitas. Permíteme llamarte en 5 minutos para darte precios especiales que solo ofrezco por teléfono. ¿Cuál es el mejor número para contactarte?";
-                await enviarMensajeTwilio(lead_phone, fallbackMessage);
-                await supabase.from('conversations').update({ procesar: true, status: 'Error: Fallback de AI' }).eq('id', id);
-            } else {
-                // Para otros errores no manejados específicamente, marcar como procesado
-                await supabase.from('conversations').update({ procesar: true, status: 'Error General' }).eq('id', id);
-            }
+        }
+    } catch (error) {
+        console.error('❌ Error general en procesarMensajesDesdeUnicorn:', error.message);
+    }
 };
 
+// 🔄 FUNCIÓN OPTIMIZADA PARA PROCESAR MENSAJES ENTRANTES CON VENTAS
+const responderMensajesEntrantesOptimizado = async () => {
+    try {
+        const { data: mensajes, error } = await supabase
+            .from('conversations')
+            .select('*')
+            .in('origen', ['whatsapp', 'sms']) // Mensajes que vienen del usuario
+            .eq('procesar', false) // Que aún no han sido procesados por el bot
+            .limit(10); // Limitar para evitar sobrecarga en cada ciclo de polling
+
+        if (error) {
+            console.error('❌ Error consultando mensajes entrantes:', error.message);
+            return;
+        }
+
+        if (!mensajes?.length) {
+            console.log('⏳ No hay nuevos leads para procesar...');
+            return;
+        }
+
+        console.log(`📨 Procesando ${mensajes.length} mensajes entrantes con OPTIMIZACIÓN DE VENTAS`);
+
+        for (const mensaje of mensajes) {
+            const { id, lead_phone, cliente_id, last_message } = mensaje;
+            console.log(`\n📞 Procesando lead ID: ${id} de ${lead_phone}`);
+
+            try {
+                // Detectar intención del mensaje del usuario
+                const intencion = detectarIntencionVenta(last_message || '');
+                console.log(`🎯 Intención detectada:`, Object.keys(intencion).filter(k => intencion[k]).join(', ') || 'general');
+
+                // Generar el historial de conversación para GPT
+                const messages = await generarHistorialGPT(lead_phone, supabase);
+                if (!messages) {
+                    console.error('❌ No se pudo generar historial para GPT');
+                    // Marcar como procesado para no intentar procesar de nuevo un historial que falla
+                    await supabase.from('conversations').update({ procesar: true, status: 'Error: No Historial GPT' }).eq('id', id);
+                    continue;
+                }
+
+                console.log('🧠 Enviando a OpenAI con parámetros optimizados...');
+                const textoAI = await generarRespuestaVentas(messages, intencion);
+                console.log(`🎯 Respuesta de AI optimizada (texto): ${textoAI.substring(0, Math.min(textoAI.length, 100))}...`);
+
+                // Validar si la respuesta es orientada a ventas (para estado/log)
+                const esRespuestaVentas = /\$|\d+|precio|costo|oferta|disponible|cuando|cita|reservar|llamar/i.test(textoAI);
+                console.log(`💰 Respuesta orientada a ventas: ${esRespuestaVentas ? 'SÍ' : 'NO'}`);
+
+                let audioUrl = null;
+                // Generar audio si la variable de entorno está activada
+                if (process.env.SEND_AUDIO_MESSAGES === 'true') {
+                    console.log('🎧 Intentando generar mensaje de audio...');
+                    // Usar el ID de la conversación para un nombre de archivo único
+                    const audioResult = await generarAudioElevenLabs(textoAI, `response-${id}-${Date.now()}.mp3`);
+                    if (audioResult.success) {
+                        audioUrl = audioResult.url;
+                        console.log(`🎧 Audio URL generada: ${audioUrl}`);
+                    } else {
+                        console.error('❌ Fallo al generar audio, se enviará solo texto:', audioResult.error);
+                    }
+                }
+
+                // Marcar el mensaje entrante como procesado
+                await supabase.from('conversations').update({
+                    procesar: true,
+                    status: esRespuestaVentas ? 'Sales Pitch' : 'In Progress'
+                }).eq('id', id);
+
+                // Insertar la respuesta del bot en la tabla 'conversations'
+                await supabase.from('conversations').insert([{
+                    lead_phone,
+                    last_message: textoAI,
+                    agent_name: 'Unicorn AI',
+                    status: esRespuestaVentas ? 'Sales Pitch' : 'In Progress',
+                    created_at: new Date().toISOString(),
+                    origen: 'unicorn', // Indicar que este mensaje fue generado por el bot
+                    procesar: true, // Ya fue generado y procesado para envío, no necesita re-procesar por polling 'unicorn'
+                    cliente_id: cliente_id || 1
+                }]);
+
+                // Enviar la respuesta (texto o audio) al cliente vía Twilio
+                await enviarMensajeTwilio(lead_phone, textoAI, audioUrl);
+
+                console.log('✅ Mensaje entrante procesado y respuesta enviada exitosamente');
+
+            } catch (err) {
+                console.error(`❌ Error procesando entrada ${lead_phone} (ID: ${id}):`, err.message);
+
+                // Fallback de respuesta en caso de error crítico con OpenAI u otro servicio
+                if (err.message.includes('OpenAI') || err.message.includes('ElevenLabs') || err.message.includes('timeout')) {
+                    console.log('⚠️ Enviando respuesta de fallback orientada a ventas debido a error de AI/servicio...');
+                    const fallbackMessage = "¡Hola! Algo inesperado sucedió. Tengo exactamente lo que necesitas. Permíteme llamarte en 5 minutos para darte precios especiales que solo ofrezco por teléfono. ¿Cuál es el mejor número para contactarte?";
+                    await enviarMensajeTwilio(lead_phone, fallbackMessage);
+                    await supabase.from('conversations').update({ procesar: true, status: 'Error: Fallback de AI' }).eq('id', id);
+                } else {
+                    // Para otros errores no manejados específicamente, marcar como procesado
+                    await supabase.from('conversations').update({ procesar: true, status: 'Error General' }).eq('id', id);
+                }
+            }
+        }
+    } catch (error) {
+        console.error('❌ Error general en responderMensajesEntrantesOptimizado:', error.message);
+    }
+};
 
 // 🔄 FUNCIÓN PARA ACTUALIZAR TODOS LOS PROMPTS A ORIENTACIÓN DE VENTAS (masivo)
 const actualizarPromptsAVentas = async () => {
@@ -539,11 +591,11 @@ const actualizarPromptsAVentas = async () => {
         console.log(`\n📊 RESUMEN DE ACTUALIZACIÓN DE PROMPTS:`);
         console.log(`✅ Clientes actualizados: ${actualizados}`);
         console.log(`❌ Errores: ${errores}`);
-        console.log(`📈 Tasa de éxito: ${((actualizados / clientes.length) * 100).toFixed(1)}%`);
+        console.log(📈 Tasa de éxito: ${((actualizados / clientes.length) * 100).toFixed(1)}%);
 
         // Verificación rápida de los prompts actualizados
         if (actualizados > 0) {
-            console.log(`\n🔍 Verificando algunos resultados...`);
+            console.log(\n🔍 Verificando algunos resultados...);
             const { data: verificacion } = await supabase
                 .from('clientes')
                 .select('id, nombre, prompt_inicial')
@@ -551,7 +603,7 @@ const actualizarPromptsAVentas = async () => {
 
             verificacion?.forEach(cliente => {
                 const contieneVentas = /CERRAR VENTAS|ESTRATEGIA DE VENTAS|urgencia|precio|descuento/i.test(cliente.prompt_inicial);
-                console.log(`✅ ${cliente.nombre}: ${contieneVentas ? 'ORIENTADO A VENTAS' : 'NECESITA REVISIÓN'}`);
+                console.log(✅ ${cliente.nombre}: ${contieneVentas ? 'ORIENTADO A VENTAS' : 'NECESITA REVISIÓN'});
             });
         }
 
@@ -576,14 +628,14 @@ app.get('/test-respuesta-ventas/:phone', async (req, res) => {
         const { phone } = req.params;
         const mensaje = req.query.mensaje || "Hola, ¿cuánto cuesta el servicio?";
 
-        console.log(`🧪 Test de respuesta para ${phone} con mensaje: "${mensaje}"`);
+        console.log(🧪 Test de respuesta para ${phone} con mensaje: "${mensaje}");
 
         // Detectar intención del mensaje
         const intencion = detectarIntencionVenta(mensaje);
         console.log('🎯 Intención detectada:', Object.keys(intencion).filter(k => intencion[k]));
 
         // Generar historial mock (asumiendo que generarHistorialGPT puede manejar esto)
-        const messages = await generarHistorialGPT(`whatsapp:${phone}`, supabase);
+        const messages = await generarHistorialGPT(whatsapp:${phone}, supabase);
 
         if (!messages) {
             return res.json({
@@ -607,7 +659,7 @@ app.get('/test-respuesta-ventas/:phone', async (req, res) => {
         let audioTestUrl = null;
         // Generar audio para el test si está activado
         if (process.env.SEND_AUDIO_MESSAGES === 'true') {
-            const audioResult = await generarAudioElevenLabs(respuestaTexto, `test-audio-${Date.now()}.mp3`);
+            const audioResult = await generarAudioElevenLabs(respuestaTexto, test-audio-${Date.now()}.mp3);
             if (audioResult.success) {
                 audioTestUrl = audioResult.url;
             } else {
@@ -759,7 +811,7 @@ app.post('/api/generar-audio', async (req, res) => {
     if (!texto) return res.status(400).json({ error: 'Falta texto' });
 
     // Generar un nombre de archivo único si no se proporciona
-    const nombreArchivo = archivo || `audio-directo-${Date.now()}.mp3`;
+    const nombreArchivo = archivo || audio-directo-${Date.now()}.mp3;
     const resultado = await generarAudioElevenLabs(texto, nombreArchivo);
     if (!resultado.success) return res.status(500).json({ error: resultado.error });
     res.json({ url: resultado.url });
@@ -767,7 +819,7 @@ app.post('/api/generar-audio', async (req, res) => {
 
 app.post('/webhook-test-audio', async (req, res) => {
     const texto = req.body.text || 'Hola, este es un ejemplo de audio generado para un webhook de prueba.';
-    const nombreArchivo = `webhook-prueba-${Date.now()}.mp3`; // Nombre de archivo único
+    const nombreArchivo = webhook-prueba-${Date.now()}.mp3; // Nombre de archivo único
     const resultado = await generarAudioElevenLabs(texto, nombreArchivo);
     if (!resultado.success) return res.status(500).json({ error: resultado.error });
     res.json({ audio_url: resultado.url });
@@ -787,5 +839,7 @@ if (process.env.POLLING_ACTIVO === 'true') {
 
 // 🚀 Inicio del servidor
 app.listen(port, () => {
-    console.log(`🟢 Servidor corriendo en puerto ${port}`);
-});
+    console.log(🟢 Servidor corriendo en puerto ${port});
+});    revisalo,  y revisa este error /app/server.js:350
+
+    const { data: pendientes, error } = await supabase
