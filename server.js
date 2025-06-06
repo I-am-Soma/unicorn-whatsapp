@@ -186,7 +186,7 @@ const generarRespuestaVentas = async (messages, intencion) => {
 const generarAudioElevenLabs = async (texto) => {
     try {
         // ID de la voz predeterminada de ElevenLabs (Rachel)
-        const vozId = 'TxGEqnHWrfWFTfGW9XjX';
+        const vozId = 'AZnzlk1XvdvUeBnXmlld';
 
         const response = await axios({
             method: 'POST',
