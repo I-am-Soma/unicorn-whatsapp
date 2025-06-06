@@ -603,7 +603,7 @@ const actualizarPromptsAVentas = async () => {
 
             verificacion?.forEach(cliente => {
                 const contieneVentas = /CERRAR VENTAS|ESTRATEGIA DE VENTAS|urgencia|precio|descuento/i.test(cliente.prompt_inicial);
-                console.log(✅ ${cliente.nombre}: ${contieneVentas ? 'ORIENTADO A VENTAS' : 'NECESITA REVISIÓN'});
+                console.log(`✅ ${cliente.nombre}: ${contieneVentas ? 'ORIENTADO A VENTAS' : 'NECESITA REVISIÓN'}`);
             });
         }
 
