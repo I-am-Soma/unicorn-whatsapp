@@ -481,8 +481,6 @@ const responderMensajesEntrantesOptimizado = async () => {
                 // Para otros errores no manejados específicamente, marcar como procesado
                 await supabase.from('conversations').update({ procesar: true, status: 'Error General' }).eq('id', id);
             }
-        }
-    }
 };
 
             // Marcar el mensaje como procesado ANTES de intentar enviar para evitar duplicados
