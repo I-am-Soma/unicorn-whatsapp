@@ -591,7 +591,7 @@ const actualizarPromptsAVentas = async () => {
         console.log(`\n📊 RESUMEN DE ACTUALIZACIÓN DE PROMPTS:`);
         console.log(`✅ Clientes actualizados: ${actualizados}`);
         console.log(`❌ Errores: ${errores}`);
-        console.log(📈 Tasa de éxito: ${((actualizados / clientes.length) * 100).toFixed(1)}%);
+        console.log(`📈 Tasa de éxito: ${((actualizados / clientes.length) * 100).toFixed(1)}%`);
 
         // Verificación rápida de los prompts actualizados
         if (actualizados > 0) {
