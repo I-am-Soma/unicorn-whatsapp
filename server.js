@@ -448,6 +448,8 @@ if (process.env.SEND_AUDIO_MESSAGES === 'true' && tipoRespuesta === 'voz') {
             }]);
 
             // Enviar la respuesta (texto o audio) al cliente vía Twilio
+               try {
+            // Enviar la respuesta (texto o audio) al cliente vía Twilio
             await enviarMensajeTwilio(lead_phone, textoAI, audioUrl);
 
             console.log('✅ Mensaje entrante procesado y respuesta enviada exitosamente');
@@ -466,8 +468,6 @@ if (process.env.SEND_AUDIO_MESSAGES === 'true' && tipoRespuesta === 'voz') {
                 await supabase.from('conversations').update({ procesar: true, status: 'Error General' }).eq('id', id);
             }
         }
-    }
-};
 
 // 🔁 Procesa mensajes salientes desde Unicorn (mensajes generados por el bot que necesitan ser enviados)
 // Esta función se encarga de enviar los mensajes que el propio bot ha "decidido" enviar.
