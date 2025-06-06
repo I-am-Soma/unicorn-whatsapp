@@ -837,4 +837,3 @@ if (process.env.POLLING_ACTIVO === 'true') {
 app.listen(port, () => {
     console.log(`🟢 Servidor corriendo en puerto ${port}`);
 });
-}
