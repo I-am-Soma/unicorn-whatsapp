@@ -207,7 +207,7 @@ const guardarAudioEnSupabase = async (nombreArchivo, buffer) => {
 // 🎧 FUNCIÓN PARA GENERAR AUDIO CON ELEVENLABS Y GUARDAR EN STORAGE
 const generarAudioElevenLabs = async (texto, nombreArchivo) => {
     try {
-        const vozId = 'zcAOhNBS3c14rBihAFp1';
+        const vozId = 'EXAVITQu4vr4xnSDxMaL';
         const response = await axios({
             method: 'POST',
             url: `https://api.elevenlabs.io/v1/text-to-speech/${vozId}`,
@@ -281,6 +281,8 @@ app.use(express.urlencoded({ extended: true }));
 // Servir archivos de audio estáticos desde el directorio 'audio'
 app.use('/audio', express.static(path.join(__dirname, 'audio')));
 
+// ✅ Integrar opción para voz o texto según preferencia del cliente
+
 // 🧩 Webhook de entrada de mensajes (para Twilio)
 app.post('/webhook', async (req, res) => {
     console.log('📡 Webhook recibido:', new Date().toISOString());
@@ -296,42 +298,33 @@ app.post('/webhook', async (req, res) => {
     }
 
     try {
-        // Extraer número limpio (ej: "+521234567890")
         const numero = phone.replace(/^whatsapp:/, '').replace(/\D/g, '');
         console.log(`📱 Número procesado: +${numero} (original: ${phone})`);
 
-        // Buscar cliente basado en el número en Supabase
         const { data: clienteData, error: clienteError } = await supabase
             .from('clientes')
-            .select('id, nombre, numero_whatsapp')
+            .select('id, nombre, numero_whatsapp, prefiere_audio')
             .eq('numero_whatsapp', `+${numero}`)
             .single();
 
-        // PGRST116 significa "no rows found", no es un error crítico aquí
         if (clienteError && clienteError.code !== 'PGRST116') {
             console.error('❌ Error consultando cliente:', clienteError.message);
         }
 
-        // Asignar un cliente_id por defecto si no se encuentra
         const cliente_id = clienteData?.id || 1;
-        console.log(`👤 Cliente detectado: ID ${cliente_id} - ${clienteData?.nombre || 'Cliente por defecto'}`);
+        const prefiere_audio = clienteData?.prefiere_audio || false;
 
-        // Guardar el mensaje entrante en la tabla 'conversations'
-        const { error } = await supabase.from('conversations').insert([{
+        await supabase.from('conversations').insert([{
             lead_phone: phone,
             last_message: message,
             agent_name: name,
             status: 'New',
             created_at: new Date().toISOString(),
             origen: 'whatsapp',
-            procesar: false, // Marcar como no procesado para que la función de polling lo recoja
-            cliente_id
+            procesar: false,
+            cliente_id,
+            prefiere_audio // Guardar la preferencia
         }]);
-
-        if (error) {
-            console.error('❌ Error al guardar en Supabase:', error);
-            return res.status(500).json({ error: 'Insert error' });
-        }
 
         console.log('✅ Mensaje guardado exitosamente');
         return res.status(200).json({ success: true });
@@ -340,6 +333,55 @@ app.post('/webhook', async (req, res) => {
         res.status(500).json({ error: 'Webhook processing failed' });
     }
 });
+
+
+// 🔁 Procesa mensajes salientes desde Unicorn (mensajes generados por el bot que necesitan ser enviados)
+const procesarMensajesDesdeUnicorn = async () => {
+    const { data: pendientes, error } = await supabase
+        .from('conversations')
+        .select('*')
+        .eq('origen', 'unicorn')
+        .eq('procesar', false);
+
+    if (error) {
+        console.error('❌ Error consultando mensajes Unicorn pendientes:', error.message);
+        return;
+    }
+
+    if (!pendientes?.length) {
+        console.log('⏳ No hay mensajes nuevos de Unicorn para enviar...');
+        return;
+    }
+
+    console.log(`🤖 Procesando ${pendientes.length} mensajes de Unicorn para envío`);
+
+    for (const mensaje of pendientes) {
+        const { id, lead_phone, last_message, cliente_id, prefiere_audio } = mensaje;
+        console.log(`\n🔄 Procesando mensaje de Unicorn ID: ${id} para ${lead_phone}`);
+
+        try {
+            let audioUrl = null;
+            if (process.env.SEND_AUDIO_MESSAGES === 'true' && prefiere_audio) {
+                console.log('🎧 Generando audio para mensaje de Unicorn saliente...');
+                const audioResult = await generarAudioElevenLabs(last_message, `unicorn-out-${id}-${Date.now()}.mp3`);
+                if (audioResult.success) {
+                    audioUrl = audioResult.url;
+                    console.log(`🎧 Audio URL generada: ${audioUrl}`);
+                } else {
+                    console.error('❌ Fallo al generar audio, se enviará solo texto:', audioResult.error);
+                }
+            }
+
+            await supabase.from('conversations').update({ procesar: true }).eq('id', id);
+            await enviarMensajeTwilio(lead_phone, last_message, audioUrl);
+            console.log('✅ Mensaje Unicorn procesado y enviado exitosamente');
+
+        } catch (err) {
+            console.error(`❌ Error procesando mensaje Unicorn saliente ${lead_phone} (ID: ${id}):`, err.message);
+            await supabase.from('conversations').update({ procesar: true, status: 'Error: Envio Unicorn' }).eq('id', id);
+        }
+    }
+};
 
 // 🔄 FUNCIÓN OPTIMIZADA PARA PROCESAR MENSAJES ENTRANTES CON VENTAS
 // Esta función se ejecuta por polling para responder a los mensajes del cliente
