@@ -445,21 +445,6 @@ const responderMensajesEntrantesOptimizado = async () => {
             }
 };
 
-            // Marcar el mensaje como procesado ANTES de intentar enviar para evitar duplicados
-            await supabase.from('conversations').update({ procesar: true }).eq('id', id);
-
-            // Enviar el mensaje (texto o audio) a través de Twilio
-            await enviarMensajeTwilio(lead_phone, last_message, audioUrl);
-
-            console.log('✅ Mensaje Unicorn procesado y enviado exitosamente');
-
-        } catch (err) {
-            console.error(`❌ Error procesando mensaje Unicorn saliente ${lead_phone} (ID: ${id}):`, err.message);
-            // Marcar como procesado con estado de error para evitar reintentos fallidos
-            await supabase.from('conversations').update({ procesar: true, status: 'Error: Envio Unicorn' }).eq('id', id);
-        }
-    }
-};
 
 // 🔄 FUNCIÓN PARA ACTUALIZAR TODOS LOS PROMPTS A ORIENTACIÓN DE VENTAS (masivo)
 const actualizarPromptsAVentas = async () => {
