@@ -29,8 +29,7 @@ const generarPromptVentasPersonalizado = (cliente, servicios = []) => {
     const nombreEmpresa = cliente.nombre || 'nuestra empresa';
     const industria = detectarIndustria(cliente.nombre, servicios);
 
-    let prompt = `Eres el especialista comercial principal de ${nombreEmpresa}, experto en ${industria}.`;
-
+    let prompt = `Eres el especialista comercial principal de ${nombreEmpresa}, experto en ${industria}.
 🎯 TU MISIÓN: Convertir CADA conversación en una VENTA confirmada. No solo informar, sino CERRAR VENTAS.
 
 🔥 ESTRATEGIA DE VENTAS AGRESIVA:
@@ -40,7 +39,7 @@ const generarPromptVentasPersonalizado = (cliente, servicios = []) => {
 4. MANEJAR OBJECIONES: Precio alto → beneficios concretos + facilidades de pago
 5. CERRAR AGRESIVAMENTE: "¿Empezamos mañana o prefieres el jueves?" "¿Efectivo o tarjeta?"
 
-💰 NUESTROS SERVICIOS PREMIUM:;
+💰 NUESTROS SERVICIOS PREMIUM:`;
 
     // Agregar servicios con formato de ventas agresivo
     if (servicios && servicios.length > 0) {
