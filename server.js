@@ -284,6 +284,8 @@ app.use(express.urlencoded({ extended: true }));
 // Servir archivos de audio estáticos desde el directorio 'audio'
 app.use('/audio', express.static(path.join(__dirname, 'audio')));
 
+// ✅ Integrar opción para voz o texto según preferencia del cliente
+
 // 🧩 Webhook de entrada de mensajes (para Twilio)
 app.post('/webhook', async (req, res) => {
     console.log('📡 Webhook recibido:', new Date().toISOString());
@@ -315,18 +317,47 @@ app.post('/webhook', async (req, res) => {
         const cliente_id = clienteData?.id || 1;
         const prefiere_audio = clienteData?.prefiere_audio || false;
 
-        // Insertar el mensaje del usuario
+        const mensajeInicial = `¡Hola! 👋 Soy tu asistente comercial de ${clienteData?.nombre || 'nuestra empresa'}.
+Tenemos promociones especiales esta semana en nuestros servicios estrella. ¿Cuál de estos te interesa más?
+1️⃣ Precio especial por paquete
+2️⃣ Consulta sin costo
+3️⃣ Descuento por respuesta inmediata
+
+¡Estoy aquí para ayudarte a elegir la mejor opción! 💬`;
+
         await supabase.from('conversations').insert([{
             lead_phone: phone,
             last_message: message,
             agent_name: name,
-            status: 'New Lead',
+            status: 'New',
             created_at: new Date().toISOString(),
             origen: 'whatsapp',
             procesar: false,
             cliente_id,
+            prefiere_audio // Guardar la preferencia
+        }]);
+
+        // Inserta también el primer mensaje proactivo de Unicorn
+        await supabase.from('conversations').insert([{
+            lead_phone: phone,
+            last_message: mensajeInicial,
+            agent_name: 'Unicorn AI',
+            status: 'Sales Pitch',
+            created_at: new Date().toISOString(),
+            origen: 'unicorn',
+            procesar: false,
+            cliente_id,
             prefiere_audio
         }]);
+
+        console.log('✅ Mensaje guardado exitosamente');
+        return res.status(200).json({ success: true });
+    } catch (err) {
+        console.error('❌ Error en webhook:', err.message);
+        res.status(500).json({ error: 'Webhook processing failed' });
+    }
+});
+
 
         console.log('✅ Mensaje guardado exitosamente');
         return res.status(200).json({ success: true });
