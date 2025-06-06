@@ -207,7 +207,7 @@ const guardarAudioEnSupabase = async (nombreArchivo, buffer) => {
 // 🎧 FUNCIÓN PARA GENERAR AUDIO CON ELEVENLABS Y GUARDAR EN STORAGE
 const generarAudioElevenLabs = async (texto, nombreArchivo) => {
     try {
-        const vozId = 'EXAVITQu4vr4xnSDxMaL';
+        const vozId = '21m00Tcm4TlvDq8ikWAM';
         const response = await axios({
             method: 'POST',
             url: `https://api.elevenlabs.io/v1/text-to-speech/${vozId}`,
@@ -336,7 +336,6 @@ app.post('/webhook', async (req, res) => {
 
 
 // 🔁 Procesa mensajes salientes desde Unicorn (mensajes generados por el bot que necesitan ser enviados)
-const procesarMensajesDesdeUnicorn = async () => {
     const { data: pendientes, error } = await supabase
         .from('conversations')
         .select('*')
