@@ -808,5 +808,5 @@ if (process.env.POLLING_ACTIVO === 'true') {
 
 // 🚀 Inicio del servidor
 app.listen(port, () => {
-    console.log(`🟢 Servidor corriendo en puerto ${port}`);
+    console.log("Servidor corriendo en puerto " + port);
 });
