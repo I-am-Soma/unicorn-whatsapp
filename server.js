@@ -183,6 +183,7 @@ const generarRespuestaVentas = async (messages, intencion) => {
 };
 
 // 🎧 FUNCIÓN PARA GENERAR AUDIO CON ELEVENLABS
+// 🎧 FUNCIÓN PARA GENERAR AUDIO CON ELEVENLABS
 const generarAudioElevenLabs = async (texto, nombreArchivo) => {
     try {
         // ID de la voz predeterminada de ElevenLabs (Rachel)
@@ -207,22 +208,26 @@ const generarAudioElevenLabs = async (texto, nombreArchivo) => {
             responseType: 'arraybuffer' // Para manejar el audio como bytes
         });
 
-        // Asegurarse de que el directorio 'audio' exista
+        // Asegurar que el directorio 'audio' exista
         const ruta = path.join(__dirname, 'audio');
         if (!fs.existsSync(ruta)) fs.mkdirSync(ruta, { recursive: true });
 
         // Guardar el archivo de audio
         const rutaArchivo = path.join(ruta, nombreArchivo);
         fs.writeFileSync(rutaArchivo, response.data);
-        console.log(`🎧 Audio guardado en: ${rutaArchivo}`);
 
         // Construir la URL pública para Twilio
-        // BASE_URL debe estar configurado en .env (ej: https://tudominio.com o http://tuip:8080)
-        const baseUrl = process.env.BASE_URL || `http://localhost:${port}`;
+        const baseUrl = 'https://unicorn-whatsapp-production.up.railway.app';
+        const urlPublica = `${baseUrl}/audio/${nombreArchivo}`.trim();
+
+        console.log(`🎧 Audio guardado en: ${rutaArchivo}`);
+        console.log(`🎧 Audio URL generada: ${urlPublica}`);
+
         return {
             success: true,
-            url: `${baseUrl}/audio/${nombreArchivo}`
+            url: urlPublica
         };
+
     } catch (err) {
         console.error('❌ Error generando audio con ElevenLabs:', err.message);
         return { success: false, error: err.message };
