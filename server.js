@@ -628,15 +628,14 @@ app.get('/test-respuesta-ventas/:phone', async (req, res) => {
         const { phone } = req.params;
         const mensaje = req.query.mensaje || "Hola, ¿cuánto cuesta el servicio?";
 
-        console.log(🧪 Test de respuesta para ${phone} con mensaje: "${mensaje}");
+        console.log(`🧪 Test de respuesta para ${phone} con mensaje: "${mensaje}"`);
 
         // Detectar intención del mensaje
         const intencion = detectarIntencionVenta(mensaje);
         console.log('🎯 Intención detectada:', Object.keys(intencion).filter(k => intencion[k]));
 
         // Generar historial mock (asumiendo que generarHistorialGPT puede manejar esto)
-        const messages = await generarHistorialGPT(whatsapp:${phone}, supabase);
-
+        const messages = await generarHistorialGPT(`whatsapp:${phone}`, supabase);
         if (!messages) {
             return res.json({
                 error: 'No se pudo generar historial para el test',
@@ -659,7 +658,7 @@ app.get('/test-respuesta-ventas/:phone', async (req, res) => {
         let audioTestUrl = null;
         // Generar audio para el test si está activado
         if (process.env.SEND_AUDIO_MESSAGES === 'true') {
-            const audioResult = await generarAudioElevenLabs(respuestaTexto, test-audio-${Date.now()}.mp3);
+            const audioResult = await generarAudioElevenLabs(respuestaTexto, `test-audio-${Date.now()}.mp3`);
             if (audioResult.success) {
                 audioTestUrl = audioResult.url;
             } else {
@@ -811,7 +810,7 @@ app.post('/api/generar-audio', async (req, res) => {
     if (!texto) return res.status(400).json({ error: 'Falta texto' });
 
     // Generar un nombre de archivo único si no se proporciona
-    const nombreArchivo = archivo || audio-directo-${Date.now()}.mp3;
+    const nombreArchivo = archivo || `audio-directo-${Date.now()}.mp3`;
     const resultado = await generarAudioElevenLabs(texto, nombreArchivo);
     if (!resultado.success) return res.status(500).json({ error: resultado.error });
     res.json({ url: resultado.url });
@@ -819,7 +818,7 @@ app.post('/api/generar-audio', async (req, res) => {
 
 app.post('/webhook-test-audio', async (req, res) => {
     const texto = req.body.text || 'Hola, este es un ejemplo de audio generado para un webhook de prueba.';
-    const nombreArchivo = webhook-prueba-${Date.now()}.mp3; // Nombre de archivo único
+    const nombreArchivo = `webhook-prueba-${Date.now()}.mp3`;
     const resultado = await generarAudioElevenLabs(texto, nombreArchivo);
     if (!resultado.success) return res.status(500).json({ error: resultado.error });
     res.json({ audio_url: resultado.url });
@@ -839,7 +838,7 @@ if (process.env.POLLING_ACTIVO === 'true') {
 
 // 🚀 Inicio del servidor
 app.listen(port, () => {
-    console.log(🟢 Servidor corriendo en puerto ${port});
+    console.log(`🟢 Servidor corriendo en puerto ${port}`);
 });    revisalo,  y revisa este error /app/server.js:350
 
     const { data: pendientes, error } = await supabase
