@@ -839,6 +839,5 @@ if (process.env.POLLING_ACTIVO === 'true') {
 // 🚀 Inicio del servidor
 app.listen(port, () => {
     console.log(`🟢 Servidor corriendo en puerto ${port}`);
-});    revisalo,  y revisa este error /app/server.js:350
-
+});  
     const { data: pendientes, error } = await supabase
