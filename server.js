@@ -406,7 +406,6 @@ const procesarMensajesDesdeUnicorn = async () => {
     }
 };
 
-
 // 🔁 Procesa mensajes salientes desde Unicorn (mensajes generados por el bot que necesitan ser enviados)
     const { data: pendientes, error } = await supabase
         .from('conversations')
