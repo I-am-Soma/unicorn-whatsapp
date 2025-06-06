@@ -385,7 +385,17 @@ const responderMensajesEntrantesOptimizado = async () => {
 
             let audioUrl = null;
             // Generar audio si la variable de entorno está activada
-            if (process.env.SEND_AUDIO_MESSAGES === 'true') {
+            // Consultar el tipo de respuesta del cliente
+const { data: clienteData, error: clienteError } = await supabase
+  .from('clientes')
+  .select('tipo_respuesta')
+  .eq('id', mensaje.cliente_id)
+  .single();
+
+const tipoRespuesta = clienteData?.tipo_respuesta || 'texto';
+
+if (process.env.SEND_AUDIO_MESSAGES === 'true' && tipoRespuesta === 'voz') {
+
                 console.log('🎧 Intentando generar mensaje de audio...');
                 // Usar el ID de la conversación para un nombre de archivo único
                 const audioResult = await generarAudioElevenLabs(textoAI, `response-${id}-${Date.now()}.mp3`);
