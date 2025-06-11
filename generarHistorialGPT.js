@@ -173,10 +173,11 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
       }
     ];
 
-    // Si es primera interacción, mensaje de bienvenida orientado a ventas
-    // Verifica si Unicorn ya envió un mensaje
-const yaSaludoUnicorn = mensajes.some(m =>
-  m.origen === 'unicorn' && m.agent_name === 'Unicorn AI'
+    const yaSaludoUnicorn = mensajes.some(m =>
+  m.origen === 'unicorn' &&
+  m.agent_name === 'Unicorn AI' &&
+  m.last_message &&
+  m.last_message.trim() !== ''
 );
 
 if (!yaSaludoUnicorn) {
