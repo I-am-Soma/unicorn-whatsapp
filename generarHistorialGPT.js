@@ -177,7 +177,7 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
   m.origen === 'unicorn' &&
   m.agent_name === 'Unicorn AI' &&
   m.last_message &&
-  m.last_message.trim() !== ''
+  m.last_message.trim().length > 10
 );
 
 if (!yaSaludoUnicorn) {
