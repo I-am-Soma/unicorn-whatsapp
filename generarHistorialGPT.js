@@ -174,28 +174,44 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
     ];
 
     // Si es primera interacción, mensaje de bienvenida orientado a ventas
-    if (!hayMensajesUsuario || !usarHistorial) {
-      let mensajeBienvenida = `¡Hola! 👋`;
-      
-      if (nombreCliente) {
-        mensajeBienvenida += ` Soy tu especialista en ${nombreCliente}.`;
+    // Verifica si Unicorn ya envió un mensaje
+const yaSaludoUnicorn = mensajes.some(m =>
+  m.origen === 'unicorn' && m.agent_name === 'Unicorn AI'
+);
+
+if (!yaSaludoUnicorn) {
+  let mensajeBienvenida = `¡Hola! 👋`;
+
+  // Añadir el prompt inicial si existe (como parte del mensaje visible)
+  if (promptBase) {
+    mensajeBienvenida += ` ${promptBase}`;
+  }
+
+  if (serviciosProcesados.length > 0) {
+    const servicioDestacado = serviciosProcesados[0];
+    mensajeBienvenida += ` 🔥 **OFERTA ESPECIAL ESTA SEMANA**: ${servicioDestacado.nombre}`;
+    if (servicioDestacado.precio) {
+      mensajeBienvenida += ` por solo $${servicioDestacado.precio}`;
+    }
+    mensajeBienvenida += `.\n\n✨ ¿Cuál de estos servicios te interesa más?`;
+
+    serviciosProcesados.slice(0, 3).forEach((servicio, index) => {
+      mensajeBienvenida += `\n${index + 1}. ${servicio.nombre}`;
+      if (servicio.precio) {
+        mensajeBienvenida += ` - $${servicio.precio}`;
       }
-      
-      if (serviciosProcesados.length > 0) {
-        const servicioDestacado = serviciosProcesados[0];
-        mensajeBienvenida += ` 🔥 **OFERTA ESPECIAL ESTA SEMANA**: ${servicioDestacado.nombre}`;
-        if (servicioDestacado.precio) {
-          mensajeBienvenida += ` por solo $${servicioDestacado.precio}`;
-        }
-        mensajeBienvenida += `.\n\n✨ ¿Cuál de estos servicios te interesa más?`;
-        
-        // Mostrar máximo 3 servicios principales
-        serviciosProcesados.slice(0, 3).forEach((servicio, index) => {
-          mensajeBienvenida += `\n${index + 1}. ${servicio.nombre}`;
-          if (servicio.precio) {
-            mensajeBienvenida += ` - $${servicio.precio}`;
-          }
-        });
+    });
+
+    mensajeBienvenida += `\n\n📞 ¿Cuándo te gustaría empezar? Solo tengo 3 espacios disponibles esta semana.`;
+  } else {
+    mensajeBienvenida += ` ¿En qué puedo ayudarte a mejorar tu situación hoy?`;
+  }
+
+  messages.push({
+    role: 'assistant',
+    content: mensajeBienvenida
+  });
+}
         
         mensajeBienvenida += `\n\n📞 ¿Cuándo te gustaría empezar? Solo tengo 3 espacios disponibles esta semana.`;
       } else {
