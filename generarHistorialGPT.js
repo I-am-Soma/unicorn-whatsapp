@@ -212,17 +212,6 @@ if (!yaSaludoUnicorn) {
     content: mensajeBienvenida
   });
 }
-        
-        mensajeBienvenida += `\n\n📞 ¿Cuándo te gustaría empezar? Solo tengo 3 espacios disponibles esta semana.`;
-      } else {
-        mensajeBienvenida += ` ¿En qué puedo ayudarte a mejorar tu situación hoy?`;
-      }
-
-      messages.push({
-        role: 'assistant',
-        content: mensajeBienvenida
-      });
-    }
 
     // Agregar historial reciente si aplica
     if (hayMensajesUsuario && usarHistorial) {
