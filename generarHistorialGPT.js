@@ -169,6 +169,7 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
     }
 
     console.log(`📤 Mensajes enviados a GPT: ${messages.length}`);
+    console.log('🧠 Preview del primer mensaje a enviar:', messages[1]?.content);
     return { tipo_respuesta, messages };
 
   } catch (err) {
