@@ -8,10 +8,10 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
     // Obtener cliente basado en el número
     const numeroConFormato = `+${baseNumero}`;
     const { data: clienteMatch, error: clienteError } = await supabase
-      .from('clientes')
-      .select('id, prompt_inicial, lista_servicios, nombre, numero_whatsapp')
-      .eq('numero_whatsapp', numeroConFormato)
-      .single();
+  .from('clientes')
+  .select('id, prompt_inicial, lista_servicios, nombre, numero_whatsapp, tipo_respuesta')
+  .eq('numero_whatsapp', numeroConFormato)
+  .single();
 
     if (clienteError && clienteError.code !== 'PGRST116') {
       console.error('❌ Error consultando cliente:', clienteError.message);
@@ -232,16 +232,19 @@ if (!yaSaludoUnicorn) {
       });
     }
 
-    console.log(`📤 Mensajes enviados a GPT: ${messages.length}`);
-    console.log(`🎯 Tipo de respuesta esperada: ${esPreguntaPrecio ? 'PRECIOS' : esObjecion ? 'MANEJO_OBJECIÓN' : 'VENTA_GENERAL'}`);
-    
-    return messages;
-    
-  } catch (err) {
-    console.error('❌ Error generando historial para GPT:', err.message);
-    console.error('Stack trace:', err.stack);
-    return null;
-  }
+   console.log(`📤 Mensajes enviados a GPT: ${messages.length}`);
+console.log(`🎯 Tipo de respuesta esperada: ${esPreguntaPrecio ? 'PRECIOS' : esObjecion ? 'MANEJO_OBJECIÓN' : 'VENTA_GENERAL'}`);
+
+return {
+  tipo_respuesta: clienteMatch?.tipo_respuesta || 'texto',
+  messages
+};
+
+} catch (err) {
+  console.error('❌ Error generando historial para GPT:', err.message);
+  console.error('Stack trace:', err.stack);
+  return null;
+}
 };
 
 module.exports = { generarHistorialGPT };
