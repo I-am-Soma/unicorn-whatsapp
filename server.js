@@ -9,8 +9,6 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 8080;
 
-// Asegúrate de que SUPABASE_ANON_KEY sea la service_role key en Railway
-// para permisos de administrador en el backend, si no, te dará errores de RLS.
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 const twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
 
@@ -155,7 +153,7 @@ class AudioManager {
     try {
       console.log(`🎵 Generando audio para: "${texto.substring(0, 50)}..."`);
 
-      const url = `${this.baseUrl}/text-to-speech/${this.voiceId}`;
+      const url = `<span class="math-inline">\{this\.baseUrl\}/text\-to\-speech/</span>{this.voiceId}`;
 
       const response = await axios.post(url, {
         text: texto,
@@ -192,31 +190,17 @@ class AudioManager {
       console.log('☁️ Subiendo audio a Supabase Storage...');
       const fileName = `audio_msg_${clienteId}_${Date.now()}.mp3`;
 
-      // --- CAMBIO CLAVE AQUÍ ---
-      // 1. Intentar verificar si el bucket existe.
-      const { data: bucketData, error: bucketGetError } = await this.supabase.storage.getBucket(this.bucketName);
+      // Verificar si el bucket existe. Ya NO intentamos crearlo programáticamente.
+      const { data: bucketData, error: bucketError } = await this.supabase.storage.getBucket(this.bucketName);
 
-      if (bucketGetError && bucketGetError.message === 'Bucket not found') {
-        console.log(`Bucket '${this.bucketName}' no encontrado, intentando crearlo...`);
-        const { error: createBucketError } = await this.supabase.storage.createBucket(this.bucketName, { public: true });
-
-        if (createBucketError) {
-          // Si la creación falla (ej. por "must be owner of table buckets"),
-          // loguear el error pero NO lanzar una excepción. Asumir que ya existe.
-          console.error(`❌ Error al crear el bucket '${this.bucketName}':`, createBucketError.message);
-          console.log(`⚠️ Asumiendo que el bucket '${this.bucketName}' ya existe y continuando con la subida.`);
-        } else {
-          console.log(`✅ Bucket '${this.bucketName}' creado exitosamente.`);
-        }
-      } else if (bucketGetError) {
-        // Otro tipo de error al obtener el bucket, loguear y asumir que existe.
-        console.error(`❌ Error al verificar el bucket '${this.bucketName}':`, bucketGetError.message);
-        console.log(`⚠️ Asumiendo que el bucket '${this.bucketName}' ya existe y continuando con la subida.`);
-      } else {
-        console.log(`✅ Bucket '${this.bucketName}' ya existe.`);
+      if (bucketError && bucketError.message === 'Bucket not found') {
+        console.error(`❌ ERROR: El bucket '${this.bucketName}' no existe. Por favor, créalo manualmente en el dashboard de Supabase (sección Storage y actívalo como "Public").`);
+        throw new Error(`Bucket Supabase '${this.bucketName}' no encontrado. Por favor, créalo manualmente.`);
+      } else if (bucketError) {
+        console.error('❌ Error al verificar el bucket en Supabase Storage:', bucketError.message);
+        throw bucketError;
       }
-      // --- FIN CAMBIO CLAVE ---
-
+      // Si llegamos aquí, el bucket existe o no hubo error al verificarlo.
 
       // Subir archivo
       const { data, error } = await this.supabase.storage
@@ -265,12 +249,12 @@ class AudioManager {
 // 🔧 FUNCIÓN PARA OBTENER O CREAR CONFIGURACIÓN DEL CLIENTE
 const obtenerOCrearConfigCliente = async (clienteId, numeroWhatsapp) => {
   try {
-    console.log(`🔍 Consultando config para cliente ID: ${clienteId} o número: ${numeroWhatsapp}`);
+    console.log(`🔍 Consultando config para cliente ID: ${clienteId || 'N/A'} o número: ${numeroWhatsapp || 'N/A'}`);
 
     let cliente = null;
     let errorConsulta = null;
 
-    // Primero intentar buscar por ID si está disponible
+    // Buscar por clienteId primero si está disponible
     if (clienteId) {
       const { data, error } = await supabase
         .from('clientes')
@@ -279,9 +263,19 @@ const obtenerOCrearConfigCliente = async (clienteId, numeroWhatsapp) => {
         .single();
       cliente = data;
       errorConsulta = error;
+
+      // Si no se encontró el cliente por ID, usar un fallback rápido
+      if (errorConsulta && errorConsulta.code === 'PGRST116') {
+        console.warn(`⚠️ Cliente ID ${clienteId} no encontrado. Usando configuración por defecto (texto)...`);
+        return {
+          id: clienteId, // Mantiene el ID si lo tenías
+          tipo_respuesta: 'texto',
+          nombre: `Cliente ID ${clienteId} (por defecto)`
+        };
+      }
     }
 
-    // Si no se encontró por ID o no se proporcionó ID, intentar buscar por número
+    // Si no se encontró por ID o no se proporcionó ID, buscar por numeroWhatsapp
     if (!cliente && numeroWhatsapp) {
       const { data, error } = await supabase
         .from('clientes')
@@ -290,44 +284,52 @@ const obtenerOCrearConfigCliente = async (clienteId, numeroWhatsapp) => {
         .single();
       cliente = data;
       errorConsulta = error;
-    }
 
-    if (errorConsulta && errorConsulta.code === 'PGRST116') { // No se encontró el cliente
-      console.log(`⚠️ Cliente no encontrado (ID: ${clienteId || 'N/A'}, Número: ${numeroWhatsapp || 'N/A'}), intentando crear uno por defecto...`);
-      const { data: newClient, error: createError } = await supabase
-        .from('clientes')
-        .insert([{
-          nombre: `Cliente ${numeroWhatsapp || 'Default'}`,
-          numero_whatsapp: numeroWhatsapp,
-          tipo_respuesta: 'texto',
-          prompt_inicial: generarPromptVentasPersonalizado({ nombre: `Cliente ${numeroWhatsapp || 'Default'}` }),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }])
-        .select()
-        .single();
+      // Si el cliente no se encuentra por número de WhatsApp, intentar crearlo
+      if (errorConsulta && errorConsulta.code === 'PGRST116') {
+        console.log(`⚠️ Cliente no encontrado para número ${numeroWhatsapp}, intentando crear uno por defecto...`);
+        const { data: newClient, error: createError } = await supabase
+          .from('clientes')
+          .insert([{
+            nombre: `Cliente ${numeroWhatsapp || 'Default'}`,
+            numero_whatsapp: numeroWhatsapp,
+            tipo_respuesta: 'texto', // <--- Considera cambiar a 'voz' si es tu default deseado
+            prompt_inicial: generarPromptVentasPersonalizado({ nombre: `Cliente ${numeroWhatsapp || 'Default'}` }),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString() // ¡Asegúrate de que esta columna exista en Supabase!
+          }])
+          .select()
+          .single();
 
-      if (createError) {
-        console.error('❌ Error al crear cliente por defecto:', createError.message);
-        // Fallback a un objeto cliente mínimo si la creación falla
-        // Importante: Si la creación del cliente falla aquí, no tendremos un ID real para las conversaciones.
-        // Asegúrate de que las RLS en 'clientes' permitan la inserción con la 'service_role' key.
-        return { id: 1, tipo_respuesta: 'texto', nombre: 'Cliente por defecto' };
+        if (createError) {
+          console.error('❌ Error al crear cliente por defecto:', createError.message);
+          // Si falla la creación, el fallback es un objeto cliente mínimo
+          return { id: null, tipo_respuesta: 'texto', nombre: 'Cliente por defecto (creación fallida)' };
+        }
+        console.log(`✅ Cliente por defecto creado con ID: ${newClient.id}`);
+        return newClient;
       }
-      console.log(`✅ Cliente por defecto creado con ID: ${newClient.id}`);
-      return newClient;
-
-    } else if (errorConsulta) {
-      console.error('❌ Error consultando cliente:', errorConsulta.message);
-      // Fallback si hay otro tipo de error al consultar el cliente
-      return { id: clienteId || 1, tipo_respuesta: 'texto', nombre: 'Cliente' };
     }
 
-    console.log(`✅ Config cliente: ${cliente?.nombre} - Respuesta: ${cliente?.tipo_respuesta || 'texto'}`);
-    return cliente || { id: clienteId || 1, tipo_respuesta: 'texto', nombre: 'Cliente' }; // Fallback final
+    // Manejo de errores generales de Supabase (no PGRST116)
+    if (errorConsulta) {
+      console.error('❌ Error consultando cliente:', errorConsulta.message);
+      return { id: clienteId || null, tipo_respuesta: 'texto', nombre: 'Cliente (error consulta)' };
+    }
+
+    // Si todo salió bien y se encontró/creó el cliente
+    if (cliente) {
+      console.log(`✅ Config cliente: ${cliente?.nombre} - Respuesta: ${cliente?.tipo_respuesta || 'texto'}`);
+      return cliente;
+    } else {
+      // Último fallback si por alguna razón no se encontró ni se pudo crear un cliente
+      console.warn('⚠️ No se pudo obtener ni crear la configuración del cliente. Usando defaults...');
+      return { id: clienteId || null, tipo_respuesta: 'texto', nombre: 'Cliente (fallback final)' };
+    }
+
   } catch (error) {
-    console.error('❌ Error en obtenerOCrearConfigCliente:', error.message);
-    return { id: clienteId || 1, tipo_respuesta: 'texto', nombre: 'Cliente' };
+    console.error('❌ Error en obtenerOCrearConfigCliente (general catch):', error.message);
+    return { id: clienteId || null, tipo_respuesta: 'texto', nombre: 'Cliente (error general)' };
   }
 };
 
@@ -384,13 +386,13 @@ const enviarMensajeSegunPreferencia = async (numero, mensaje, clienteId) => {
     console.log(`📱 Enviando mensaje a ${numero} (Cliente ID: ${clienteId})`);
 
     // Obtener configuración del cliente (ahora puede crear uno si no existe)
-    const config = await obtenerOCrearConfigCliente(clienteId, numero);
+    const config = await obtenerOCrearConfigCliente(clienteId, numero.replace(/^whatsapp:/, '').replace(/\D/g, ''));
     console.log(`⚙️ Configuración cliente: ${config.tipo_respuesta || 'texto'}`);
 
     const to = numero.startsWith('whatsapp:') ? numero : `whatsapp:${numero}`;
     const from = process.env.TWILIO_WHATSAPP_NUMBER;
 
-    // Si es texto O si no hay config de voz, enviar texto
+    // Si es texto O si no hay config de voz (o si está explícitamente en texto), enviar texto
     if (!config.tipo_respuesta || config.tipo_respuesta === 'texto') {
       console.log('📝 Enviando como TEXTO');
       return await twilioClient.messages.create({ from, to, body: mensaje });
@@ -416,7 +418,7 @@ const enviarMensajeSegunPreferencia = async (numero, mensaje, clienteId) => {
         console.log(`🎵 Generando y subiendo audio para: "${mensajeLimpio.substring(0, 50)}..."`);
 
         // Generar audio y subir a Supabase Storage
-        const audioUrl = await audioManager.convertirTextoAAudioURL(mensajeLimpio, config.id); // Usar el ID del cliente REAL
+        const audioUrl = await audioManager.convertirTextoAAudioURL(mensajeLimpio, config.id || 'default'); // Usar el ID del cliente REAL, o 'default' si es null
         console.log('URL del audio generado:', audioUrl);
 
         // Enviar audio por WhatsApp
@@ -486,7 +488,12 @@ app.post('/webhook', async (req, res) => {
 
     // Busca o crea el cliente basado en el número de WhatsApp
     const clienteActual = await obtenerOCrearConfigCliente(null, numero); // Pasa null para ID y el número
-    const cliente_id = clienteActual.id; // Usa el ID del cliente encontrado o creado
+    const cliente_id = clienteActual?.id || null; // Usa el ID del cliente encontrado o creado
+
+    if (!cliente_id) {
+        console.error('❌ No se pudo obtener/crear un cliente ID válido para el mensaje. No se guardará.');
+        return res.status(500).json({ error: 'No valid client ID for message.' });
+    }
 
     console.log(`👤 Cliente detectado/creado: ID ${cliente_id} - ${clienteActual?.nombre}`);
 
@@ -541,7 +548,13 @@ const responderMensajesEntrantesOptimizado = async () => {
       const { id, lead_phone, cliente_id, last_message } = mensaje;
       // Obtener o crear la configuración del cliente real
       const currentCliente = await obtenerOCrearConfigCliente(cliente_id, lead_phone.replace(/^whatsapp:/, '').replace(/\D/g, ''));
-      const currentClienteId = currentCliente.id;
+      const currentClienteId = currentCliente?.id || null; // Asegurarse de tener un ID válido
+
+      if (!currentClienteId) {
+        console.error(`❌ No se pudo obtener/crear un cliente ID válido para el mensaje ${id}. Se omite el procesamiento.`);
+        continue; // Saltar al siguiente mensaje si no hay ID de cliente válido
+      }
+
       console.log(`\n📞 Procesando lead ID: ${id} de ${lead_phone} (Cliente ID: ${currentClienteId})`);
 
       try {
@@ -626,7 +639,13 @@ const procesarMensajesDesdeUnicorn = async () => {
       const { id, lead_phone, cliente_id, last_message } = mensaje;
       // Obtener o crear la configuración del cliente real
       const currentCliente = await obtenerOCrearConfigCliente(cliente_id, lead_phone.replace(/^whatsapp:/, '').replace(/\D/g, ''));
-      const currentClienteId = currentCliente.id;
+      const currentClienteId = currentCliente?.id || null; // Asegurarse de tener un ID válido
+
+      if (!currentClienteId) {
+        console.error(`❌ No se pudo obtener/crear un cliente ID válido para el mensaje ${id}. Se omite el procesamiento.`);
+        continue; // Saltar al siguiente mensaje si no hay ID de cliente válido
+      }
+
       console.log(`\n🔄 Procesando mensaje ID: ${id} para ${lead_phone} (Cliente ID: ${currentClienteId})`);
 
       try {
@@ -825,8 +844,8 @@ app.get('/test-elevenlabs', async (req, res) => {
 
     // Aquí necesitamos un cliente ID real para el nombre de archivo, así que lo obtenemos/creamos
     const clienteParaTest = await obtenerOCrearConfigCliente(clienteId, "test_numero_virtual"); // Usar un número ficticio para la creación
-    const audioUrl = await audioManager.convertirTextoAAudioURL(texto, clienteParaTest.id);
-
+    const audioUrl = await audioManager.convertirTextoAAudioURL(texto, clienteParaTest.id || 'default'); // ID o 'default'
+    
     res.json({
       success: true,
       texto,
@@ -858,7 +877,7 @@ app.post('/cliente/:id/preferencia', async (req, res) => {
 
     const { data, error } = await supabase
       .from('clientes')
-      .update({ tipo_respuesta })
+      .update({ tipo_respuesta, updated_at: new Date().toISOString() }) // Actualizar también updated_at
       .eq('id', id)
       .select();
 
@@ -1006,60 +1025,20 @@ const inicializarSistema = async () => {
   if (audioCompleto) {
     console.log('✅ Todas las variables de ElevenLabs configuradas');
 
-    // --- CAMBIO CLAVE AQUÍ (solo para inicialización) ---
-    // En la inicialización, si da error al crear, loguear y continuar.
+    // Inicializar bucket de Supabase Storage
     try {
       const { data: bucketData, error: bucketError } = await supabase.storage.getBucket('whatsapp_audios');
       if (bucketError && bucketError.message === 'Bucket not found') {
-        console.log("📦 Creando bucket 'whatsapp_audios'...");
-        const { error: createBucketError } = await supabase.storage.createBucket('whatsapp_audios', { public: true });
-        if (createBucketError) {
-          console.error(`❌ Error al crear bucket en inicialización:`, createBucketError.message);
-          console.log('⚠️ Asumiendo que el bucket ya existe y el sistema funcionará con texto/audio si el bucket está listo.');
-        } else {
-          console.log("✅ Bucket 'whatsapp_audios' creado exitosamente.");
-        }
+        // NOTA: Ya no se intenta crear el bucket aquí. Esto debe hacerse manualmente.
+        console.error("❌ ERROR: El bucket 'whatsapp_audios' no existe en Supabase. Por favor, créalo manualmente en el dashboard (sección Storage y actívalo como 'Public').");
+        console.log('⚠️ Sistema funcionará solo con texto hasta que el bucket sea creado manualmente.');
       } else if (bucketError) {
-        console.error(`❌ Error verificando bucket en inicialización:`, bucketError.message);
-        console.log('⚠️ Asumiendo que el bucket ya existe y el sistema funcionará con texto/audio si el bucket está listo.');
+        console.error('❌ Error verificando bucket:', bucketError.message);
       } else {
         console.log("✅ Bucket 'whatsapp_audios' ya existe.");
       }
     } catch (err) {
-      console.error('❌ Error general durante verificación/creación de bucket en inicialización:', err.message);
-      console.log('⚠️ Asumiendo que el bucket ya existe y el sistema funcionará con texto/audio si el bucket está listo.');
+      console.error('❌ Error bucket Supabase:', err.message);
     }
-    // --- FIN CAMBIO CLAVE ---
-
   } else {
-    console.log('⚠️ Variables ElevenLabs faltantes:', varsAudio.filter(v => !process.env[v]));
-    console.log('📝 Sistema funcionará solo con texto.');
-  }
-
-  return true;
-};
-
-// AL FINAL DEL ARCHIVO:
-// Iniciar el servidor solo si la inicialización es exitosa
-inicializarSistema().then((success) => {
-  if (success) {
-    app.listen(port, () => {
-      console.log(`🎉 Servidor escuchando en el puerto ${port}`);
-      console.log(`🚀 Accede al webhook en: http://localhost:${port}/webhook`);
-      console.log(`🧪 Prueba el sistema de audio en: http://localhost:${port}/test-audio/:phone`);
-      console.log(`🧪 Prueba ElevenLabs/Supabase en: http://localhost:${port}/test-elevenlabs`);
-      console.log(`⚙️ Gestiona preferencias de cliente en: http://localhost:${port}/cliente/:id/preferencia`);
-      console.log(`📊 Ve estadísticas de audio en: http://localhost:${port}/stats-audio`);
-      console.log(`🔄 Actualiza todos los prompts a ventas: http://localhost:${port}/update-all-prompts-ventas`);
-      console.log(`⏪ Restaura prompt de cliente: http://localhost:${port}/cliente/:id/restaurar-prompt`);
-    });
-    // Intervalos para procesar mensajes
-    setInterval(responderMensajesEntrantesOptimizado, 5 * 60 * 1000); // Cada 5 minutos
-    setInterval(procesarMensajesDesdeUnicorn, 2 * 60 * 1000); // Cada 2 minutos
-  } else {
-    console.error('🚫 Fallo al inicializar el sistema. El servidor no se iniciará.');
-  }
-}).catch(err => {
-  console.error('❌ Error crítico durante la inicialización del sistema:', err);
-  process.exit(1);
-});
+    console.log
