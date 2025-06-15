@@ -846,7 +846,7 @@ app.post('/cliente/:id/preferencia', async (req, res) => {
 
     const { data, error } = await supabase
       .from('clientes')
-      .update({ tipo_respuesta, updated_at: new Date().toISOString() }) // Actualizar también updated_at
+      .update({ tipo_respuesta, updated_at: new Date().toISOString() })
       .eq('id', id)
       .select();
 
@@ -996,9 +996,8 @@ const inicializarSistema = async () => {
 
     // Inicializar bucket de Supabase Storage
     try {
-      const { data: bucketData, error: bucketError } = await supabase.storage.getBucket('audios'); // AQUI SE CAMBIO EL NOMBRE DEL BUCKET A 'audios'
+      const { data: bucketData, error: bucketError } = await supabase.storage.getBucket('audios'); // <--- AQUI SE CAMBIO EL NOMBRE DEL BUCKET A 'audios'
       if (bucketError && bucketError.message === 'Bucket not found') {
-        // NOTA: Ya no se intenta crear el bucket aquí. Esto debe hacerse manualmente.
         console.error("❌ ERROR: El bucket 'audios' no existe en Supabase. Por favor, créalo manualmente en el dashboard (sección Storage y actívalo como 'Public').");
         console.log('⚠️ Sistema funcionará solo con texto hasta que el bucket sea creado manualmente.');
       } else if (bucketError) {
