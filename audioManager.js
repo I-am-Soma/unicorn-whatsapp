@@ -10,6 +10,10 @@ class AudioManager {
     this.defaultVoiceId = process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB'; // Adam
     this.maxCacheSize = 50; // Máximo de audios en caché
     this.maxTextLength = 500; // Máximo caracteres para audio
+     console.log(`[AudioManager] Verificando configuración Supabase...`);
+    console.log(`[AudioManager] SUPABASE_URL está ${process.env.SUPABASE_URL ? 'CONFIGURADA' : 'NO CONFIGURADA'}`);
+    console.log(`[AudioManager] SUPABASE_ANON_KEY está ${process.env.SUPABASE_ANON_KEY ? 'CONFIGURADA' : 'NO CONFIGURADA'}`);
+    console.log(`[AudioManager] Nombre del Bucket en código: '${this.bucketName}'`);
   }
 
   /**
