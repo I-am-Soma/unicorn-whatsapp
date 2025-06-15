@@ -246,7 +246,7 @@ class AudioManager {
 
 // ---
 // Lógica de Respuesta y Envío
-// 🔧 FUNCIÓN PARA OBTENER O CREAR CONFIGURACIÓN DEL CLIENTE
+// 🔧 FUNCIÓN PARA OBTENER O CREAR CONFIGURACIÓN DEL CLIENTE (LÓGICA MEJORADA)
 const obtenerOCrearConfigCliente = async (clienteId, numeroWhatsapp) => {
   try {
     console.log(`🔍 Consultando config para cliente ID: ${clienteId || 'N/A'} o número: ${numeroWhatsapp || 'N/A'}`);
@@ -254,29 +254,8 @@ const obtenerOCrearConfigCliente = async (clienteId, numeroWhatsapp) => {
     let cliente = null;
     let errorConsulta = null;
 
-    // Buscar por clienteId primero si está disponible
-    if (clienteId) {
-      const { data, error } = await supabase
-        .from('clientes')
-        .select('id, nombre, tipo_respuesta, lista_servicios')
-        .eq('id', clienteId)
-        .single();
-      cliente = data;
-      errorConsulta = error;
-
-      // Si no se encontró el cliente por ID, usar un fallback rápido
-      if (errorConsulta && errorConsulta.code === 'PGRST116') {
-        console.warn(`⚠️ Cliente ID ${clienteId} no encontrado. Usando configuración por defecto (texto)...`);
-        return {
-          id: clienteId, // Mantiene el ID si lo tenías
-          tipo_respuesta: 'texto',
-          nombre: `Cliente ID ${clienteId} (por defecto)`
-        };
-      }
-    }
-
-    // Si no se encontró por ID o no se proporcionó ID, buscar por numeroWhatsapp
-    if (!cliente && numeroWhatsapp) {
+    // 1. Intentar buscar por numeroWhatsapp primero si está disponible
+    if (numeroWhatsapp) {
       const { data, error } = await supabase
         .from('clientes')
         .select('id, nombre, tipo_respuesta, lista_servicios')
@@ -285,50 +264,65 @@ const obtenerOCrearConfigCliente = async (clienteId, numeroWhatsapp) => {
       cliente = data;
       errorConsulta = error;
 
-      // Si el cliente no se encuentra por número de WhatsApp, intentar crearlo
-      if (errorConsulta && errorConsulta.code === 'PGRST116') {
-        console.log(`⚠️ Cliente no encontrado para número ${numeroWhatsapp}, intentando crear uno por defecto...`);
-        const { data: newClient, error: createError } = await supabase
-          .from('clientes')
-          .insert([{
-            nombre: `Cliente ${numeroWhatsapp || 'Default'}`,
-            numero_whatsapp: numeroWhatsapp,
-            tipo_respuesta: 'texto', // <--- Considera cambiar a 'voz' si es tu default deseado para clientes nuevos
-            prompt_inicial: generarPromptVentasPersonalizado({ nombre: `Cliente ${numeroWhatsapp || 'Default'}` }),
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString() // ¡Asegúrate de que esta columna exista en Supabase!
-          }])
-          .select()
-          .single();
-
-        if (createError) {
-          console.error('❌ Error al crear cliente por defecto:', createError.message);
-          // Si falla la creación, el fallback es un objeto cliente mínimo
-          return { id: null, tipo_respuesta: 'texto', nombre: 'Cliente por defecto (creación fallida)' };
-        }
-        console.log(`✅ Cliente por defecto creado con ID: ${newClient.id}`);
-        return newClient;
+      if (cliente) {
+        console.log(`✅ Cliente encontrado por número ${numeroWhatsapp}: ID ${cliente.id} (${cliente.nombre})`);
+        return cliente; // Si se encuentra por número, usamos esa configuración
+      } else if (errorConsulta && errorConsulta.code === 'PGRST116') {
+        console.log(`⚠️ Cliente no encontrado por número ${numeroWhatsapp}.`);
+        // No creamos aquí aún, pasamos al siguiente paso.
+      } else if (errorConsulta) {
+        console.error('❌ Error consultando cliente por número:', errorConsulta.message);
+        // Si hay otro tipo de error, aún podemos intentar con el clienteId o crear uno.
       }
     }
 
-    // Manejo de errores generales de Supabase (no PGRST116)
-    if (errorConsulta) {
-      console.error('❌ Error consultando cliente:', errorConsulta.message);
-      return { id: clienteId || null, tipo_respuesta: 'texto', nombre: 'Cliente (error consulta)' };
-    }
+    // 2. Si no se encontró por número, intentar buscar por clienteId (si se proporcionó)
+    if (!cliente && clienteId) {
+      const { data, error } = await supabase
+        .from('clientes')
+        .select('id, nombre, tipo_respuesta, lista_servicios')
+        .eq('id', clienteId)
+        .single();
+      cliente = data;
+      errorConsulta = error;
 
-    // Si todo salió bien y se encontró/creó el cliente
-    if (cliente) {
-      console.log(`✅ Config cliente: ${cliente?.nombre} - Respuesta: ${cliente?.tipo_respuesta || 'texto'}`);
-      return cliente;
-    } else {
-      // Último fallback si por alguna razón no se encontró ni se pudo crear un cliente
-      console.warn('⚠️ No se pudo obtener ni crear la configuración del cliente. Usando defaults...');
-      return { id: clienteId || null, tipo_respuesta: 'texto', nombre: 'Cliente (fallback final)' };
+      if (cliente) {
+        console.log(`✅ Cliente encontrado por ID ${clienteId}: (${cliente.nombre})`);
+        return cliente; // Si se encuentra por ID, usamos esa configuración
+      } else if (errorConsulta && errorConsulta.code === 'PGRST116') {
+        console.warn(`⚠️ Cliente ID ${clienteId} no encontrado.`);
+        // No creamos aquí aún, pasamos al siguiente paso.
+      } else if (errorConsulta) {
+        console.error('❌ Error consultando cliente por ID:', errorConsulta.message);
+      }
     }
+    
+    // 3. Si no se encontró ni por número ni por ID (o no se proporcionaron), intentar crear uno por defecto
+    console.log(`⚠️ No se encontró cliente existente. Intentando crear uno por defecto para ${numeroWhatsapp || 'ID ' + clienteId || 'desconocido'}...`);
+    const { data: newClient, error: createError } = await supabase
+      .from('clientes')
+      .insert([{
+        nombre: `Cliente ${numeroWhatsapp || 'Default'}`,
+        numero_whatsapp: numeroWhatsapp,
+        tipo_respuesta: 'texto', // <--- Considera cambiar a 'voz' si es tu default deseado para clientes nuevos
+        prompt_inicial: generarPromptVentasPersonalizado({ nombre: `Cliente ${numeroWhatsapp || 'Default'}` }),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString() // ¡Asegúrate de que esta columna exista en Supabase!
+      }])
+      .select()
+      .single();
+
+    if (createError) {
+      console.error('❌ Error al crear cliente por defecto:', createError.message);
+      // Si falla la creación, el fallback es un objeto cliente mínimo
+      return { id: null, tipo_respuesta: 'texto', nombre: 'Cliente por defecto (creación fallida)' };
+    }
+    console.log(`✅ Cliente por defecto creado con ID: ${newClient.id}`);
+    return newClient;
 
   } catch (error) {
     console.error('❌ Error en obtenerOCrearConfigCliente (general catch):', error.message);
+    // Fallback final si algo falla inesperadamente
     return { id: clienteId || null, tipo_respuesta: 'texto', nombre: 'Cliente (error general)' };
   }
 };
@@ -385,7 +379,7 @@ const enviarMensajeSegunPreferencia = async (numero, mensaje, clienteId) => {
   try {
     console.log(`📱 Enviando mensaje a ${numero} (Cliente ID: ${clienteId})`);
 
-    // Obtener configuración del cliente (ahora puede crear uno si no existe)
+    // Obtener configuración del cliente (ahora con lógica mejorada de búsqueda)
     const config = await obtenerOCrearConfigCliente(clienteId, numero.replace(/^whatsapp:/, '').replace(/\D/g, ''));
     console.log(`⚙️ Configuración cliente: ${config.tipo_respuesta || 'texto'}`);
 
@@ -486,7 +480,7 @@ app.post('/webhook', async (req, res) => {
     const numero = phone.replace(/^whatsapp:/, '').replace(/\D/g, ''); // +521656...
     console.log(`📱 Número procesado: ${numero} (original: ${phone})`);
 
-    // Busca o crea el cliente basado en el número de WhatsApp
+    // Busca o crea el cliente basado en el número de WhatsApp (priorizando el número)
     const clienteActual = await obtenerOCrearConfigCliente(null, numero); // Pasa null para ID y el número
     const cliente_id = clienteActual?.id || null; // Usa el ID del cliente encontrado o creado
 
@@ -546,7 +540,7 @@ const responderMensajesEntrantesOptimizado = async () => {
 
     for (const mensaje of mensajes) {
       const { id, lead_phone, cliente_id, last_message } = mensaje;
-      // Obtener o crear la configuración del cliente real
+      // Obtener o crear la configuración del cliente real (ahora prioriza por número si el ID inicial falla)
       const currentCliente = await obtenerOCrearConfigCliente(cliente_id, lead_phone.replace(/^whatsapp:/, '').replace(/\D/g, ''));
       const currentClienteId = currentCliente?.id || null; // Asegurarse de tener un ID válido
 
@@ -637,7 +631,7 @@ const procesarMensajesDesdeUnicorn = async () => {
 
     for (const mensaje of pendientes) {
       const { id, lead_phone, cliente_id, last_message } = mensaje;
-      // Obtener o crear la configuración del cliente real
+      // Obtener o crear la configuración del cliente real (ahora prioriza por número si el ID inicial falla)
       const currentCliente = await obtenerOCrearConfigCliente(cliente_id, lead_phone.replace(/^whatsapp:/, '').replace(/\D/g, ''));
       const currentClienteId = currentCliente?.id || null; // Asegurarse de tener un ID válido
 
@@ -693,9 +687,8 @@ const procesarMensajesDesdeUnicorn = async () => {
 
 // 🔄 FUNCIÓN PARA ACTUALIZAR TODOS LOS PROMPTS A ORIENTACIÓN DE VENTAS
 const actualizarPromptsAVentas = async () => {
+  console.log('🚀 Iniciando actualización masiva de prompts a orientación de ventas...');
   try {
-    console.log('🚀 Iniciando actualización masiva de prompts a orientación de ventas...');
-
     const { data: clientes, error } = await supabase
       .from('clientes')
       .select('*');
