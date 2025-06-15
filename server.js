@@ -3,7 +3,7 @@ const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
 const twilio = require('twilio');
 const { generarHistorialGPT } = require('./generarHistorialGPT');
-const FormData = require('form-data'); // Se mantiene si se usa en otro lugar, aunque no directamente aquí
+const FormData = require('form-data');
 require('dotenv').config();
 
 const app = express();
@@ -13,7 +13,7 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANO
 const twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
 
 // ---
-## Parámetros y Funciones de IA y Ventas
+// Parámetros y Funciones de IA y Ventas
 // 🔧 PARÁMETROS OPTIMIZADOS PARA VENTAS
 const parametrosGPTVentas = {
   model: 'gpt-3.5-turbo',
@@ -137,7 +137,7 @@ const detectarIntencionVenta = (mensaje) => {
 };
 
 // ---
-## Manejo de Audio (ElevenLabs y Supabase Storage)
+// Manejo de Audio (ElevenLabs y Supabase Storage)
 // 🎵 CLASE AUDIOMANAGER PARA ELEVENLABS Y SUPABASE STORAGE
 class AudioManager {
   constructor() {
@@ -185,7 +185,6 @@ class AudioManager {
     }
   }
 
-  // 3. Mejorar manejo de errores en AudioManager - Reemplazar función completa:
   async subirASupabaseStorage(audioBuffer, clienteId) {
     try {
       console.log('☁️ Subiendo audio a Supabase Storage...');
@@ -201,7 +200,6 @@ class AudioManager {
           console.error('❌ Error al crear el bucket en Supabase Storage:', createBucketError.message);
           throw createBucketError;
         }
-        // 1. Corregir console.log faltante en línea 241:
         console.log(`✅ Bucket '${this.bucketName}' creado exitosamente.`);
       } else if (bucketError) {
         console.error('❌ Error al verificar el bucket en Supabase Storage:', bucketError.message);
@@ -230,7 +228,6 @@ class AudioManager {
         throw new Error('No se pudo obtener la URL pública de Supabase Storage.');
       }
 
-      // 2. Corregir console.log faltante en línea 258:
       console.log('✅ Audio subido a Supabase Storage:', publicUrlData.publicUrl);
       return publicUrlData.publicUrl;
     } catch (error) {
@@ -252,7 +249,7 @@ class AudioManager {
 }
 
 // ---
-## Lógica de Respuesta y Envío
+// Lógica de Respuesta y Envío
 // 🔧 FUNCIÓN PARA OBTENER CONFIGURACIÓN DEL CLIENTE
 const obtenerConfigCliente = async (clienteId) => {
   try {
@@ -410,7 +407,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // ---
-## Endpoints
+// Endpoints
 // 🧩 Webhook de entrada de mensajes
 app.post('/webhook', async (req, res) => {
   console.log('📡 Webhook recibido:', new Date().toISOString());
@@ -667,7 +664,7 @@ const actualizarPromptsAVentas = async () => {
           .from('clientes')
           .update({
             prompt_inicial: nuevoPrompt,
-            prompt_backup: backupPrompt, // Guarda el prompt actual como backup
+            prompt_backup: backupPrompt,
             updated_at: new Date().toISOString()
           })
           .eq('id', cliente.id);
@@ -716,7 +713,7 @@ const actualizarPromptsAVentas = async () => {
 
 
 // ---
-## Testeo y Inicialización del Sistema
+// Testeo y Inicialización del Sistema
 // 🧪 Test de audio para un número específico
 app.get('/test-audio/:phone', async (req, res) => {
   try {
@@ -845,7 +842,7 @@ app.get('/stats-audio', async (req, res) => {
   }
 });
 
-// 4. Agregar endpoint para actualizar TODOS los prompts a orientación de ventas:
+// Endpoint para actualizar TODOS los prompts a orientación de ventas:
 app.post('/update-all-prompts-ventas', async (req, res) => {
   try {
     console.log('🚀 Iniciando actualización masiva de prompts...');
@@ -867,7 +864,7 @@ app.post('/update-all-prompts-ventas', async (req, res) => {
   }
 });
 
-// 5. Agregar endpoint para restaurar prompt original:
+// Endpoint para restaurar prompt original:
 app.post('/cliente/:id/restaurar-prompt', async (req, res) => {
   try {
     const { id } = req.params;
@@ -911,7 +908,8 @@ app.post('/cliente/:id/restaurar-prompt', async (req, res) => {
 });
 
 
-// 6. Mejorar inicialización del bucket - Reemplazar función completa:
+// ---
+// INICIALIZAR SISTEMA AL STARTUP
 const inicializarSistema = async () => {
   console.log('🚀 INICIALIZANDO SISTEMA CON AUDIO/VOZ...');
 
