@@ -153,7 +153,7 @@ class AudioManager {
     try {
       console.log(`🎵 Generando audio para: "${texto.substring(0, 50)}..."`);
 
-      const url = `<span class="math-inline">\{this\.baseUrl\}/text\-to\-speech/</span>{this.voiceId}`;
+      const url = `${this.baseUrl}/text-to-speech/${this.voiceId}`;
 
       const response = await axios.post(url, {
         text: texto,
@@ -1041,4 +1041,34 @@ const inicializarSistema = async () => {
       console.error('❌ Error bucket Supabase:', err.message);
     }
   } else {
-    console.log
+    console.log('⚠️ Variables ElevenLabs faltantes:', varsAudio.filter(v => !process.env[v]));
+    console.log('📝 Sistema funcionará solo con texto.');
+  }
+
+  return true;
+};
+
+// AL FINAL DEL ARCHIVO:
+// Iniciar el servidor solo si la inicialización es exitosa
+inicializarSistema().then((success) => {
+  if (success) {
+    app.listen(port, () => {
+      console.log(`🎉 Servidor escuchando en el puerto ${port}`);
+      console.log(`🚀 Accede al webhook en: http://localhost:${port}/webhook`);
+      console.log(`🧪 Prueba el sistema de audio en: http://localhost:${port}/test-audio/:phone`);
+      console.log(`🧪 Prueba ElevenLabs/Supabase en: http://localhost:${port}/test-elevenlabs`);
+      console.log(`⚙️ Gestiona preferencias de cliente en: http://localhost:${port}/cliente/:id/preferencia`);
+      console.log(`📊 Ve estadísticas de audio en: http://localhost:${port}/stats-audio`);
+      console.log(`🔄 Actualiza todos los prompts a ventas: http://localhost:${port}/update-all-prompts-ventas`);
+      console.log(`⏪ Restaura prompt de cliente: http://localhost:${port}/cliente/:id/restaurar-prompt`);
+    });
+    // Intervalos para procesar mensajes
+    setInterval(responderMensajesEntrantesOptimizado, 5 * 60 * 1000); // Cada 5 minutos
+    setInterval(procesarMensajesDesdeUnicorn, 2 * 60 * 1000); // Cada 2 minutos
+  } else {
+    console.error('🚫 Fallo al inicializar el sistema. El servidor no se iniciará.');
+  }
+}).catch(err => {
+  console.error('❌ Error crítico durante la inicialización del sistema:', err);
+  process.exit(1);
+});
