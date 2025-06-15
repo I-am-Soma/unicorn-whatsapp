@@ -247,74 +247,49 @@ class AudioManager {
 // ---
 // Lógica de Respuesta y Envío
 // 🔧 FUNCIÓN PARA OBTENER O CREAR CONFIGURACIÓN DEL CLIENTE (LÓGICA MEJORADA)
-const obtenerOCrearConfigCliente = async (clienteId, numeroWhatsapp) => {
+const obtenerOCrearConfigCliente = async (numeroWhatsapp) => {
   try {
-    console.log(`🔍 Consultando config para cliente ID: ${clienteId || 'N/A'} o número: ${numeroWhatsapp || 'N/A'}`);
+    const cleanNumber = numeroWhatsapp.replace(/^whatsapp:/, '').replace(/\D/g, '');
+    console.log(`🔍 Buscando o creando configuración para número: ${cleanNumber}`);
 
-    let cliente = null;
-    let errorConsulta = null;
-
-    // 1. Intentar buscar por numeroWhatsapp primero si está disponible
-    if (numeroWhatsapp) {
+    // 1. Intentar buscar por numeroWhatsapp primero (siempre la fuente de verdad)
+    if (cleanNumber) {
       const { data, error } = await supabase
         .from('clientes')
         .select('id, nombre, tipo_respuesta, lista_servicios')
-        .eq('numero_whatsapp', numeroWhatsapp)
+        .eq('numero_whatsapp', cleanNumber)
         .single();
-      cliente = data;
-      errorConsulta = error;
 
-      if (cliente) {
-        console.log(`✅ Cliente encontrado por número ${numeroWhatsapp}: ID ${cliente.id} (${cliente.nombre})`);
-        return cliente; // Si se encuentra por número, usamos esa configuración
-      } else if (errorConsulta && errorConsulta.code === 'PGRST116') {
-        console.log(`⚠️ Cliente no encontrado por número ${numeroWhatsapp}.`);
-        // No creamos aquí aún, pasamos al siguiente paso.
-      } else if (errorConsulta) {
-        console.error('❌ Error consultando cliente por número:', errorConsulta.message);
-        // Si hay otro tipo de error, aún podemos intentar con el clienteId o crear uno.
+      if (data) {
+        console.log(`✅ Cliente encontrado por número ${cleanNumber}: ID ${data.id} (${data.nombre})`);
+        return data; // Si se encuentra por número, usamos esa configuración
+      } else if (error && error.code === 'PGRST116') {
+        console.log(`⚠️ Cliente no encontrado por número ${cleanNumber}.`);
+        // Continuar para crear cliente
+      } else if (error) {
+        console.error('❌ Error consultando cliente por número:', error.message);
+        // Fallback a crear cliente si hay un error inesperado
       }
     }
 
-    // 2. Si no se encontró por número, intentar buscar por clienteId (si se proporcionó)
-    if (!cliente && clienteId) {
-      const { data, error } = await supabase
-        .from('clientes')
-        .select('id, nombre, tipo_respuesta, lista_servicios')
-        .eq('id', clienteId)
-        .single();
-      cliente = data;
-      errorConsulta = error;
-
-      if (cliente) {
-        console.log(`✅ Cliente encontrado por ID ${clienteId}: (${cliente.nombre})`);
-        return cliente; // Si se encuentra por ID, usamos esa configuración
-      } else if (errorConsulta && errorConsulta.code === 'PGRST116') {
-        console.warn(`⚠️ Cliente ID ${clienteId} no encontrado.`);
-        // No creamos aquí aún, pasamos al siguiente paso.
-      } else if (errorConsulta) {
-        console.error('❌ Error consultando cliente por ID:', errorConsulta.message);
-      }
-    }
-    
-    // 3. Si no se encontró ni por número ni por ID (o no se proporcionaron), intentar crear uno por defecto
-    console.log(`⚠️ No se encontró cliente existente. Intentando crear uno por defecto para ${numeroWhatsapp || 'ID ' + clienteId || 'desconocido'}...`);
+    // 2. Si no se encontró por número, intentar crear uno por defecto
+    console.log(`⚠️ No se encontró cliente existente. Intentando crear uno por defecto para ${cleanNumber || 'desconocido'}...`);
     const { data: newClient, error: createError } = await supabase
       .from('clientes')
       .insert([{
-        nombre: `Cliente ${numeroWhatsapp || 'Default'}`,
-        numero_whatsapp: numeroWhatsapp,
-        tipo_respuesta: 'texto', // <--- Considera cambiar a 'voz' si es tu default deseado para clientes nuevos
-        prompt_inicial: generarPromptVentasPersonalizado({ nombre: `Cliente ${numeroWhatsapp || 'Default'}` }),
+        nombre: `Cliente ${cleanNumber || 'Default'}`,
+        numero_whatsapp: cleanNumber,
+        tipo_respuesta: 'voz', // <--- ¡Cambiado a 'voz' por defecto para nuevos clientes!
+        prompt_inicial: generarPromptVentasPersonalizado({ nombre: `Cliente ${cleanNumber || 'Default'}` }),
         created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString() // ¡Asegúrate de que esta columna exista en Supabase!
+        updated_at: new Date().toISOString()
       }])
       .select()
       .single();
 
     if (createError) {
       console.error('❌ Error al crear cliente por defecto:', createError.message);
-      // Si falla la creación, el fallback es un objeto cliente mínimo
+      // Si falla la creación, el fallback es un objeto cliente mínimo (texto)
       return { id: null, tipo_respuesta: 'texto', nombre: 'Cliente por defecto (creación fallida)' };
     }
     console.log(`✅ Cliente por defecto creado con ID: ${newClient.id}`);
@@ -323,7 +298,7 @@ const obtenerOCrearConfigCliente = async (clienteId, numeroWhatsapp) => {
   } catch (error) {
     console.error('❌ Error en obtenerOCrearConfigCliente (general catch):', error.message);
     // Fallback final si algo falla inesperadamente
-    return { id: clienteId || null, tipo_respuesta: 'texto', nombre: 'Cliente (error general)' };
+    return { id: null, tipo_respuesta: 'texto', nombre: 'Cliente (error general)' };
   }
 };
 
@@ -373,37 +348,33 @@ const generarRespuestaVentas = async (messages, intencion) => {
 };
 
 // 🎵 FUNCIÓN PRINCIPAL: ENVIAR MENSAJE SEGÚN PREFERENCIA
-const audioManager = new AudioManager(); // Instancia de AudioManager aquí
+const audioManager = new AudioManager();
 
-const enviarMensajeSegunPreferencia = async (numero, mensaje, clienteId) => {
+const enviarMensajeSegunPreferencia = async (numero, mensaje, clienteConfig) => {
   try {
-    console.log(`📱 Enviando mensaje a ${numero} (Cliente ID: ${clienteId})`);
-
-    // Obtener configuración del cliente (ahora con lógica mejorada de búsqueda)
-    const config = await obtenerOCrearConfigCliente(clienteId, numero.replace(/^whatsapp:/, '').replace(/\D/g, ''));
-    console.log(`⚙️ Configuración cliente: ${config.tipo_respuesta || 'texto'}`);
-
     const to = numero.startsWith('whatsapp:') ? numero : `whatsapp:${numero}`;
     const from = process.env.TWILIO_WHATSAPP_NUMBER;
+    const clienteId = clienteConfig.id || 'default'; // Usa el ID del cliente o 'default' si no existe
+
+    console.log(`📱 Enviando mensaje a ${to} (Cliente ID: ${clienteId})`);
+    console.log(`⚙️ Configuración cliente: ${clienteConfig.tipo_respuesta || 'texto'}`);
 
     // Si es texto O si no hay config de voz (o si está explícitamente en texto), enviar texto
-    if (!config.tipo_respuesta || config.tipo_respuesta === 'texto') {
+    if (!clienteConfig.tipo_respuesta || clienteConfig.tipo_respuesta === 'texto') {
       console.log('📝 Enviando como TEXTO');
       return await twilioClient.messages.create({ from, to, body: mensaje });
     }
 
     // Si es voz, intentar generar audio
-    if (config.tipo_respuesta === 'voz') {
+    if (clienteConfig.tipo_respuesta === 'voz') {
       try {
         console.log('🎵 Configurado para VOZ - Generando audio...');
 
-        // Verificar que tenemos las API keys necesarias para ElevenLabs
         if (!process.env.ELEVENLABS_API_KEY) {
           console.error('❌ ELEVENLABS_API_KEY no configurada, enviando texto');
           return await twilioClient.messages.create({ from, to, body: mensaje });
         }
 
-        // Limpiar mensaje para audio (sin emojis excesivos)
         const mensajeLimpio = mensaje
           .replace(/[🎯🔥💰✅❌⚡🚀📞💪]/g, '')
           .replace(/\n+/g, '. ')
@@ -411,11 +382,9 @@ const enviarMensajeSegunPreferencia = async (numero, mensaje, clienteId) => {
 
         console.log(`🎵 Generando y subiendo audio para: "${mensajeLimpio.substring(0, 50)}..."`);
 
-        // Generar audio y subir a Supabase Storage
-        const audioUrl = await audioManager.convertirTextoAAudioURL(mensajeLimpio, config.id || 'default'); // Usar el ID del cliente REAL, o 'default' si es null
+        const audioUrl = await audioManager.convertirTextoAAudioURL(mensajeLimpio, clienteId);
         console.log('URL del audio generado:', audioUrl);
 
-        // Enviar audio por WhatsApp
         const resultado = await twilioClient.messages.create({
           from,
           to,
@@ -427,18 +396,15 @@ const enviarMensajeSegunPreferencia = async (numero, mensaje, clienteId) => {
 
       } catch (audioError) {
         console.error('❌ Error con audio, enviando texto como fallback:', audioError.message);
-        // Fallback a texto si audio falla
         return await twilioClient.messages.create({ from, to, body: mensaje });
       }
     }
 
-    // Fallback por defecto (aunque ya está cubierto por el primer if)
-    console.log('📝 Fallback a TEXTO');
+    console.log('📝 Fallback a TEXTO (configuración no reconocida)');
     return await twilioClient.messages.create({ from, to, body: mensaje });
 
   } catch (error) {
     console.error('❌ Error en enviarMensajeSegunPreferencia:', error.message);
-    // Último fallback
     return await twilioClient.messages.create({ from, to, body: mensaje });
   }
 };
@@ -477,19 +443,16 @@ app.post('/webhook', async (req, res) => {
   }
 
   try {
-    const numero = phone.replace(/^whatsapp:/, '').replace(/\D/g, ''); // +521656...
-    console.log(`📱 Número procesado: ${numero} (original: ${phone})`);
+    // **PRIMER CAMBIO CLAVE:** Obtener/Crear el cliente VERDADERO basado en el NÚMERO DE WHATSAPP entrante
+    const clienteReal = await obtenerOCrearConfigCliente(phone);
+    const cliente_id_para_guardar = clienteReal?.id || null;
 
-    // Busca o crea el cliente basado en el número de WhatsApp (priorizando el número)
-    const clienteActual = await obtenerOCrearConfigCliente(null, numero); // Pasa null para ID y el número
-    const cliente_id = clienteActual?.id || null; // Usa el ID del cliente encontrado o creado
-
-    if (!cliente_id) {
+    if (!cliente_id_para_guardar) {
         console.error('❌ No se pudo obtener/crear un cliente ID válido para el mensaje. No se guardará.');
         return res.status(500).json({ error: 'No valid client ID for message.' });
     }
 
-    console.log(`👤 Cliente detectado/creado: ID ${cliente_id} - ${clienteActual?.nombre}`);
+    console.log(`👤 Cliente detectado/creado para webhook: ID ${cliente_id_para_guardar} - ${clienteReal?.nombre}`);
 
     const { error } = await supabase.from('conversations').insert([{
       lead_phone: phone,
@@ -499,7 +462,7 @@ app.post('/webhook', async (req, res) => {
       created_at: new Date().toISOString(),
       origen: 'whatsapp',
       procesar: false,
-      cliente_id
+      cliente_id: cliente_id_para_guardar // ¡Usamos el ID correcto!
     }]);
 
     if (error) {
@@ -539,25 +502,29 @@ const responderMensajesEntrantesOptimizado = async () => {
     console.log(`📨 Procesando ${mensajes.length} mensajes entrantes con OPTIMIZACIÓN DE VENTAS + AUDIO`);
 
     for (const mensaje of mensajes) {
-      const { id, lead_phone, cliente_id, last_message } = mensaje;
-      // Obtener o crear la configuración del cliente real (ahora prioriza por número si el ID inicial falla)
-      const currentCliente = await obtenerOCrearConfigCliente(cliente_id, lead_phone.replace(/^whatsapp:/, '').replace(/\D/g, ''));
-      const currentClienteId = currentCliente?.id || null; // Asegurarse de tener un ID válido
+      const { id, lead_phone, last_message } = mensaje; // Eliminamos cliente_id de aquí, lo obtendremos
+      
+      // **SEGUNDO CAMBIO CLAVE:** Obtener la configuración del cliente REAL por el número de teléfono
+      const clienteConfig = await obtenerOCrearConfigCliente(lead_phone);
+      const cliente_id_actual = clienteConfig?.id || null;
 
-      if (!currentClienteId) {
+      if (!cliente_id_actual) {
         console.error(`❌ No se pudo obtener/crear un cliente ID válido para el mensaje ${id}. Se omite el procesamiento.`);
-        continue; // Saltar al siguiente mensaje si no hay ID de cliente válido
+        await supabase.from('conversations').update({ procesar: true, status: 'Failed: No Client' }).eq('id', id); // Marcar como fallido
+        continue;
       }
 
-      console.log(`\n📞 Procesando lead ID: ${id} de ${lead_phone} (Cliente ID: ${currentClienteId})`);
+      console.log(`\n📞 Procesando lead ID: ${id} de ${lead_phone} (Cliente ID real: ${cliente_id_actual})`);
 
       try {
         const intencion = detectarIntencionVenta(last_message || '');
         console.log(`🎯 Intención detectada:`, Object.keys(intencion).filter(k => intencion[k]).join(', ') || 'general');
 
-        const messages = await generarHistorialGPT(lead_phone, supabase);
+        // Generar historial con el ID del cliente real, si aplica
+        const messages = await generarHistorialGPT(lead_phone, supabase, cliente_id_actual); // Pasar cliente_id_actual
         if (!messages) {
           console.error('❌ No se pudo generar historial para GPT');
+          await supabase.from('conversations').update({ procesar: true, status: 'Failed: GPT History' }).eq('id', id);
           continue;
         }
 
@@ -569,8 +536,8 @@ const responderMensajesEntrantesOptimizado = async () => {
         const esRespuestaVentas = /\$|\d+|precio|costo|oferta|disponible|cuando|cita|reservar|llamar/i.test(textoAI);
         console.log(`💰 Respuesta orientada a ventas: ${esRespuestaVentas ? 'SÍ' : 'NO'}`);
 
-        // Marcar como procesado
-        await supabase.from('conversations').update({ procesar: true }).eq('id', id);
+        // Marcar el mensaje original como procesado
+        await supabase.from('conversations').update({ procesar: true, cliente_id: cliente_id_actual }).eq('id', id);
 
         // Insertar respuesta
         await supabase.from('conversations').insert([{
@@ -581,11 +548,11 @@ const responderMensajesEntrantesOptimizado = async () => {
           created_at: new Date().toISOString(),
           origen: 'unicorn',
           procesar: true,
-          cliente_id: currentClienteId // Usar el ID del cliente real
+          cliente_id: cliente_id_actual // ¡Usar el ID del cliente REAL!
         }]);
 
-        // 🎵 USAR NUEVA FUNCIÓN QUE DETECTA AUDIO/TEXTO
-        await enviarMensajeSegunPreferencia(lead_phone, textoAI, currentClienteId);
+        // 🎵 USAR FUNCIÓN QUE DETECTA AUDIO/TEXTO CON LA CONFIGURACIÓN REAL DEL CLIENTE
+        await enviarMensajeSegunPreferencia(lead_phone, textoAI, clienteConfig);
 
         console.log('✅ Mensaje entrante procesado exitosamente con audio/texto');
 
@@ -595,8 +562,10 @@ const responderMensajesEntrantesOptimizado = async () => {
         if (err.response?.status === 429 || err.response?.status >= 500) {
           console.log('⚠️ Enviando respuesta de fallback orientada a ventas...');
           const fallbackMessage = "¡Hola! Tengo exactamente lo que necesitas. Permíteme llamarte en 5 minutos para darte precios especiales que solo ofrezco por teléfono. ¿Cuál es el mejor número para contactarte?";
-          await enviarMensajeSegunPreferencia(lead_phone, fallbackMessage, currentClienteId);
-          await supabase.from('conversations').update({ procesar: true }).eq('id', id);
+          await enviarMensajeSegunPreferencia(lead_phone, fallbackMessage, clienteConfig);
+          await supabase.from('conversations').update({ procesar: true, status: 'Failed: AI Error' }).eq('id', id);
+        } else {
+          await supabase.from('conversations').update({ procesar: true, status: 'Failed: Unknown' }).eq('id', id);
         }
       }
     }
@@ -630,24 +599,28 @@ const procesarMensajesDesdeUnicorn = async () => {
     console.log(`🤖 Procesando ${pendientes.length} mensajes de Unicorn con OPTIMIZACIÓN + AUDIO`);
 
     for (const mensaje of pendientes) {
-      const { id, lead_phone, cliente_id, last_message } = mensaje;
-      // Obtener o crear la configuración del cliente real (ahora prioriza por número si el ID inicial falla)
-      const currentCliente = await obtenerOCrearConfigCliente(cliente_id, lead_phone.replace(/^whatsapp:/, '').replace(/\D/g, ''));
-      const currentClienteId = currentCliente?.id || null; // Asegurarse de tener un ID válido
+      const { id, lead_phone, last_message } = mensaje; // Eliminamos cliente_id de aquí
 
-      if (!currentClienteId) {
+      // **TERCER CAMBIO CLAVE:** Obtener la configuración del cliente REAL por el número de teléfono
+      const clienteConfig = await obtenerOCrearConfigCliente(lead_phone);
+      const cliente_id_actual = clienteConfig?.id || null;
+
+      if (!cliente_id_actual) {
         console.error(`❌ No se pudo obtener/crear un cliente ID válido para el mensaje ${id}. Se omite el procesamiento.`);
-        continue; // Saltar al siguiente mensaje si no hay ID de cliente válido
+        await supabase.from('conversations').update({ procesar: true, status: 'Failed: No Client' }).eq('id', id);
+        continue;
       }
 
-      console.log(`\n🔄 Procesando mensaje ID: ${id} para ${lead_phone} (Cliente ID: ${currentClienteId})`);
+      console.log(`\n🔄 Procesando mensaje ID: ${id} para ${lead_phone} (Cliente ID real: ${cliente_id_actual})`);
 
       try {
         const intencion = detectarIntencionVenta(last_message || '');
 
-        const messages = await generarHistorialGPT(lead_phone, supabase);
+        // Generar historial con el ID del cliente real, si aplica
+        const messages = await generarHistorialGPT(lead_phone, supabase, cliente_id_actual); // Pasar cliente_id_actual
         if (!messages) {
           console.error('❌ No se pudo generar historial para GPT');
+          await supabase.from('conversations').update({ procesar: true, status: 'Failed: GPT History' }).eq('id', id);
           continue;
         }
 
@@ -656,7 +629,7 @@ const procesarMensajesDesdeUnicorn = async () => {
         const textoAI = await generarRespuestaVentas(messages, intencion);
         console.log(`🎯 Respuesta de AI: ${textoAI.substring(0, 100)}...`);
 
-        await supabase.from('conversations').update({ procesar: true }).eq('id', id);
+        await supabase.from('conversations').update({ procesar: true, cliente_id: cliente_id_actual }).eq('id', id);
 
         await supabase.from('conversations').insert([{
           lead_phone,
@@ -666,16 +639,17 @@ const procesarMensajesDesdeUnicorn = async () => {
           created_at: new Date().toISOString(),
           origen: 'unicorn',
           procesar: true,
-          cliente_id: currentClienteId // Usar el ID del cliente real
+          cliente_id: cliente_id_actual // ¡Usar el ID del cliente REAL!
         }]);
 
-        // 🎵 USAR NUEVA FUNCIÓN QUE DETECTA AUDIO/TEXTO
-        await enviarMensajeSegunPreferencia(lead_phone, textoAI, currentClienteId);
+        // 🎵 USAR FUNCIÓN QUE DETECTA AUDIO/TEXTO CON LA CONFIGURACIÓN REAL DEL CLIENTE
+        await enviarMensajeSegunPreferencia(lead_phone, textoAI, clienteConfig);
 
         console.log('✅ Mensaje Unicorn procesado exitosamente con audio/texto');
 
       } catch (err) {
         console.error(`❌ Error procesando unicorn ${lead_phone}:`, err.message);
+        await supabase.from('conversations').update({ procesar: true, status: 'Failed: AI Error' }).eq('id', id);
       }
     }
   } catch (mainErr) {
@@ -798,22 +772,23 @@ app.get('/test-audio/:phone', async (req, res) => {
   try {
     const { phone } = req.params;
     const mensaje = req.query.mensaje || "Hola, este es un mensaje de prueba de audio desde nuestro sistema usando Supabase Storage.";
-    // El clienteId aquí se usará como referencia inicial, pero obtenerOCrearConfigCliente lo gestionará
-    const clienteId = req.query.cliente ? parseInt(req.query.cliente) : null; // Pasa null si no se especifica
-
+    
     console.log(`🧪 Test de audio para ${phone}`);
+
+    // Obtener la configuración real del cliente para el número de prueba
+    const clienteParaTest = await obtenerOCrearConfigCliente(phone);
 
     const resultado = await enviarMensajeSegunPreferencia(
       phone.startsWith('whatsapp:') ? phone : `whatsapp:${phone}`,
       mensaje,
-      clienteId // Pasa el clienteId o null
+      clienteParaTest // Pasamos el objeto de configuración del cliente
     );
 
     res.json({
       success: true,
       phone,
       mensaje,
-      clienteId,
+      clienteId: clienteParaTest.id,
       twilioSid: resultado.sid,
       timestamp: new Date().toISOString()
     });
@@ -831,19 +806,20 @@ app.get('/test-audio/:phone', async (req, res) => {
 app.get('/test-elevenlabs', async (req, res) => {
   try {
     const texto = req.query.texto || "Hola, este es un test de ElevenLabs con Supabase Storage.";
-    const clienteId = req.query.cliente ? parseInt(req.query.cliente) : null; // Pasa null si no se especifica
+    const testNumber = req.query.phone || "whatsapp:+15551234567"; // Usar un número de prueba para crear cliente si es necesario
 
     console.log('🧪 Test directo ElevenLabs + Supabase Storage');
 
     // Aquí necesitamos un cliente ID real para el nombre de archivo, así que lo obtenemos/creamos
-    const clienteParaTest = await obtenerOCrearConfigCliente(clienteId, "test_numero_virtual"); // Usar un número ficticio para la creación
-    const audioUrl = await audioManager.convertirTextoAAudioURL(texto, clienteParaTest.id || 'default'); // ID o 'default'
+    const clienteParaTest = await obtenerOCrearConfigCliente(testNumber);
+    const audioUrl = await audioManager.convertirTextoAAudioURL(texto, clienteParaTest.id || 'default');
     
     res.json({
       success: true,
       texto,
       audioUrl,
       mensaje: "Audio generado y subido exitosamente a Supabase Storage",
+      clienteId: clienteParaTest.id,
       timestamp: new Date().toISOString()
     });
 
