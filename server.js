@@ -9,7 +9,6 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 8080;
 
-// Inicializa Supabase y Twilio
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 const twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
 
@@ -148,13 +147,6 @@ class AudioManager {
     this.baseUrl = 'https://api.elevenlabs.io/v1';
     this.supabase = supabase; // Pasar la instancia de Supabase
     this.bucketName = 'audios'; // AQUI SE CAMBIO EL NOMBRE DEL BUCKET A 'audios'
-
-    // --- AÑADIDOS PARA DEPURAR (INICIO) ---
-    console.log(`[AudioManager] Verificando configuración Supabase...`);
-    console.log(`[AudioManager] SUPABASE_URL está ${process.env.SUPABASE_URL ? 'CONFIGURADA' : 'NO CONFIGURADA'}`);
-    console.log(`[AudioManager] SUPABASE_ANON_KEY está ${process.env.SUPABASE_ANON_KEY ? 'CONFIGURADA' : 'NO CONFIGURADA'}`);
-    console.log(`[AudioManager] Nombre del Bucket en código: '${this.bucketName}'`);
-    // --- AÑADIDOS PARA DEPURAR (FIN) ---
   }
 
   async generarAudio(texto) {
@@ -510,14 +502,15 @@ const responderMensajesEntrantesOptimizado = async () => {
     console.log(`📨 Procesando ${mensajes.length} mensajes entrantes con OPTIMIZACIÓN DE VENTAS + AUDIO`);
 
     for (const mensaje of mensajes) {
-      const { id, lead_phone, last_message } = mensaje;
+      const { id, lead_phone, last_message } = mensaje; // Eliminamos cliente_id de aquí, lo obtendremos
       
+      // **SEGUNDO CAMBIO CLAVE:** Obtener la configuración del cliente REAL por el número de teléfono
       const clienteConfig = await obtenerOCrearConfigCliente(lead_phone);
       const cliente_id_actual = clienteConfig?.id || null;
 
       if (!cliente_id_actual) {
         console.error(`❌ No se pudo obtener/crear un cliente ID válido para el mensaje ${id}. Se omite el procesamiento.`);
-        await supabase.from('conversations').update({ procesar: true, status: 'Failed: No Client' }).eq('id', id);
+        await supabase.from('conversations').update({ procesar: true, status: 'Failed: No Client' }).eq('id', id); // Marcar como fallido
         continue;
       }
 
@@ -527,7 +520,8 @@ const responderMensajesEntrantesOptimizado = async () => {
         const intencion = detectarIntencionVenta(last_message || '');
         console.log(`🎯 Intención detectada:`, Object.keys(intencion).filter(k => intencion[k]).join(', ') || 'general');
 
-        const messages = await generarHistorialGPT(lead_phone, supabase, cliente_id_actual);
+        // Generar historial con el ID del cliente real, si aplica
+        const messages = await generarHistorialGPT(lead_phone, supabase, cliente_id_actual); // Pasar cliente_id_actual
         if (!messages) {
           console.error('❌ No se pudo generar historial para GPT');
           await supabase.from('conversations').update({ procesar: true, status: 'Failed: GPT History' }).eq('id', id);
@@ -542,8 +536,10 @@ const responderMensajesEntrantesOptimizado = async () => {
         const esRespuestaVentas = /\$|\d+|precio|costo|oferta|disponible|cuando|cita|reservar|llamar/i.test(textoAI);
         console.log(`💰 Respuesta orientada a ventas: ${esRespuestaVentas ? 'SÍ' : 'NO'}`);
 
+        // Marcar el mensaje original como procesado
         await supabase.from('conversations').update({ procesar: true, cliente_id: cliente_id_actual }).eq('id', id);
 
+        // Insertar respuesta
         await supabase.from('conversations').insert([{
           lead_phone,
           last_message: textoAI,
@@ -552,9 +548,10 @@ const responderMensajesEntrantesOptimizado = async () => {
           created_at: new Date().toISOString(),
           origen: 'unicorn',
           procesar: true,
-          cliente_id: cliente_id_actual
+          cliente_id: cliente_id_actual // ¡Usar el ID del cliente REAL!
         }]);
 
+        // 🎵 USAR FUNCIÓN QUE DETECTA AUDIO/TEXTO CON LA CONFIGURACIÓN REAL DEL CLIENTE
         await enviarMensajeSegunPreferencia(lead_phone, textoAI, clienteConfig);
 
         console.log('✅ Mensaje entrante procesado exitosamente con audio/texto');
@@ -602,8 +599,9 @@ const procesarMensajesDesdeUnicorn = async () => {
     console.log(`🤖 Procesando ${pendientes.length} mensajes de Unicorn con OPTIMIZACIÓN + AUDIO`);
 
     for (const mensaje of pendientes) {
-      const { id, lead_phone, last_message } = mensaje;
+      const { id, lead_phone, last_message } = mensaje; // Eliminamos cliente_id de aquí
 
+      // **TERCER CAMBIO CLAVE:** Obtener la configuración del cliente REAL por el número de teléfono
       const clienteConfig = await obtenerOCrearConfigCliente(lead_phone);
       const cliente_id_actual = clienteConfig?.id || null;
 
@@ -618,7 +616,8 @@ const procesarMensajesDesdeUnicorn = async () => {
       try {
         const intencion = detectarIntencionVenta(last_message || '');
 
-        const messages = await generarHistorialGPT(lead_phone, supabase, cliente_id_actual);
+        // Generar historial con el ID del cliente real, si aplica
+        const messages = await generarHistorialGPT(lead_phone, supabase, cliente_id_actual); // Pasar cliente_id_actual
         if (!messages) {
           console.error('❌ No se pudo generar historial para GPT');
           await supabase.from('conversations').update({ procesar: true, status: 'Failed: GPT History' }).eq('id', id);
@@ -640,9 +639,10 @@ const procesarMensajesDesdeUnicorn = async () => {
           created_at: new Date().toISOString(),
           origen: 'unicorn',
           procesar: true,
-          cliente_id: cliente_id_actual
+          cliente_id: cliente_id_actual // ¡Usar el ID del cliente REAL!
         }]);
 
+        // 🎵 USAR FUNCIÓN QUE DETECTA AUDIO/TEXTO CON LA CONFIGURACIÓN REAL DEL CLIENTE
         await enviarMensajeSegunPreferencia(lead_phone, textoAI, clienteConfig);
 
         console.log('✅ Mensaje Unicorn procesado exitosamente con audio/texto');
@@ -812,19 +812,19 @@ app.get('/test-elevenlabs', async (req, res) => {
 
     // Aquí necesitamos un cliente ID real para el nombre de archivo, así que lo obtenemos/creamos
     const clienteParaTest = await obtenerOCrearConfigCliente(testNumber);
-    const clienteIdForAudio = clienteParaTest?.id || 'test_client';
-
-    const audioUrl = await audioManager.convertirTextoAAudioURL(texto, clienteIdForAudio);
-
+    const audioUrl = await audioManager.convertirTextoAAudioURL(texto, clienteParaTest.id || 'default');
+    
     res.json({
       success: true,
+      texto,
       audioUrl,
-      message: 'Audio generado y subido. Puedes acceder a la URL para reproducirlo.',
+      mensaje: "Audio generado y subido exitosamente a Supabase Storage",
+      clienteId: clienteParaTest.id,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    console.error('❌ Error en test-elevenlabs:', error.message);
+    console.error('❌ Error en test ElevenLabs + Supabase:', error.message);
     res.status(500).json({
       error: error.message,
       success: false
@@ -832,77 +832,211 @@ app.get('/test-elevenlabs', async (req, res) => {
   }
 });
 
-// Función de inicialización del sistema que hemos estado depurando
+// ⚙️ Endpoint para cambiar preferencia de cliente
+app.post('/cliente/:id/preferencia', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { tipo_respuesta } = req.body;
+
+    if (!['voz', 'texto'].includes(tipo_respuesta)) {
+      return res.status(400).json({
+        error: 'tipo_respuesta debe ser "voz" o "texto"'
+      });
+    }
+
+    const { data, error } = await supabase
+      .from('clientes')
+      .update({ tipo_respuesta, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select();
+
+    if (error) {
+      throw error;
+    }
+
+    res.json({
+      success: true,
+      cliente: data[0],
+      mensaje: `Preferencia actualizada a: ${tipo_respuesta}`,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Error actualizando preferencia:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 📊 Endpoint para ver stats de audio vs texto
+app.get('/stats-audio', async (req, res) => {
+  try {
+    const { data: clientes, error } = await supabase
+      .from('clientes')
+      .select('id, nombre, tipo_respuesta');
+
+    if (error) throw error;
+
+    const stats = clientes.reduce((acc, cliente) => {
+      const tipo = cliente.tipo_respuesta || 'texto';
+      acc[tipo] = (acc[tipo] || 0) + 1;
+      return acc;
+    }, {});
+
+    res.json({
+      totalClientes: clientes.length,
+      distribucion: stats,
+      porcentajeAudio: ((stats.voz || 0) / clientes.length * 100).toFixed(1),
+      clientes: clientes.map(c => ({
+        id: c.id,
+        nombre: c.nombre,
+        preferencia: c.tipo_respuesta || 'texto'
+      })),
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Error en stats audio:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Endpoint para actualizar TODOS los prompts a orientación de ventas:
+app.post('/update-all-prompts-ventas', async (req, res) => {
+  try {
+    console.log('🚀 Iniciando actualización masiva de prompts...');
+    const resultado = await actualizarPromptsAVentas();
+
+    res.json({
+      success: true,
+      mensaje: "Actualización de prompts completada",
+      clientesActualizados: resultado.actualizados,
+      errores: resultado.errores,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Error en actualización masiva:', error.message);
+    res.status(500).json({
+      error: error.message,
+      success: false
+    });
+  }
+});
+
+// Endpoint para restaurar prompt original:
+app.post('/cliente/:id/restaurar-prompt', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data: cliente, error: getError } = await supabase
+      .from('clientes')
+      .select('prompt_backup')
+      .eq('id', id)
+      .single();
+
+    if (getError) throw getError;
+
+    if (!cliente.prompt_backup) {
+      return res.status(400).json({
+        error: 'No hay backup disponible para restaurar'
+      });
+    }
+
+    const { data, error } = await supabase
+      .from('clientes')
+      .update({
+        prompt_inicial: cliente.prompt_backup,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select();
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      cliente: data[0],
+      mensaje: 'Prompt restaurado desde backup',
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Error restaurando prompt:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+// ---
+// INICIALIZAR SISTEMA AL STARTUP
 const inicializarSistema = async () => {
   console.log('🚀 INICIALIZANDO SISTEMA CON AUDIO/VOZ...');
 
-  // Asegúrate de que `audioCompleto` esté definido o se obtenga aquí.
-  // Por ejemplo, si `audioCompleto` es un booleano que depende de ELEVENLABS_API_KEY:
-  const audioCompleto = process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_VOICE_ID && process.env.ELEVENLABS_MODEL;
+  // Verificar variables críticas
+  const varsRequeridas = [
+    'SUPABASE_URL', 'SUPABASE_ANON_KEY',
+    'TWILIO_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_WHATSAPP_NUMBER',
+    'OPENAI_API_KEY'
+  ];
+
+  const varsFaltantes = varsRequeridas.filter(v => !process.env[v]);
+  if (varsFaltantes.length > 0) {
+    console.error('❌ Variables de entorno CRÍTICAS faltantes:', varsFaltantes);
+    console.error('¡El sistema no puede iniciar correctamente sin estas variables!');
+    process.exit(1);
+  }
+
+  // Verificar variables de audio
+  const varsAudio = ['ELEVENLABS_API_KEY', 'ELEVENLABS_VOICE_ID', 'ELEVENLABS_MODEL'];
+  const audioCompleto = varsAudio.every(v => process.env[v]);
+
+  console.log(`🎵 Sistema de audio: ${audioCompleto ? 'ACTIVADO' : 'DESACTIVADO (solo texto)'}`);
 
   if (audioCompleto) {
-    console.log('✅ Todas las variables de ElevenLabs configuradas.');
+    console.log('✅ Todas las variables de ElevenLabs configuradas');
 
-    // --- BLOQUE DE DEPURACIÓN DE CONEXIÓN SUPABASE (INICIO) ---
+    // Inicializar bucket de Supabase Storage
     try {
-      console.log('🔗 Intentando listar todos los buckets para verificar la conexión general con Supabase...');
-      const { data: bucketsList, error: listError } = await supabase.storage.listBuckets();
-
-      if (listError) {
-        console.error('❌ Error fatal al listar buckets de Supabase. Esto indica un problema grave de conexión o credenciales:', listError.message);
-        // Aquí no queremos que la aplicación se detenga completamente si las credenciales fallan,
-        // pero queremos un log claro. Podrías decidir si retornar false para detener el inicio.
-        // return false; 
-      }
-
-      if (bucketsList && bucketsList.length > 0) { // Verifica bucketsList no sea null/undefined
-        console.log(`✅ Conexión Supabase exitosa. Se encontraron ${bucketsList.length} buckets.`);
-        const bucketNames = bucketsList.map(b => b.name).join(', ');
-        console.log(`Buckets disponibles en Supabase: [${bucketNames}]`);
-
-        const audiosBucketFound = bucketsList.some(bucket => bucket.name === 'audios');
-        if (audiosBucketFound) {
-          console.log(`✅ El bucket 'audios' *aparece* en la lista de buckets obtenida de Supabase.`);
-        } else {
-          console.error(`⚠️ ATENCIÓN: El bucket 'audios' *NO APARECE* en la lista de buckets que Supabase devolvió.`);
-          console.error(`Esto podría indicar un nombre incorrecto en el dashboard o un problema de visibilidad.`);
-        }
-      } else {
-        console.log('✅ Conexión Supabase exitosa, pero no se encontraron buckets en tu proyecto (podría ser normal si no tienes ninguno creado, excepto "audios").');
-      }
-
-    } catch (connError) {
-      console.error('❌ Error inesperado durante la prueba de conexión/listado de buckets de Supabase:', connError.message);
-      // return false;
-    }
-    // --- BLOQUE DE DEPURACIÓN DE CONEXIÓN SUPABASE (FIN) ---
-
-
-    // --- TU CÓDIGO EXISTENTE PARA VERIFICAR EL BUCKET 'audios' ---
-    try {
-      // Esta llamada es la que te está dando el error "Bucket not found"
-      const { data: bucketData, error: bucketError } = await supabase.storage.getBucket('audios');
+      const { data: bucketData, error: bucketError } = await supabase.storage.getBucket('audios'); // <--- AQUI SE CAMBIO EL NOMBRE DEL BUCKET A 'audios'
       if (bucketError && bucketError.message === 'Bucket not found') {
         console.error("❌ ERROR: El bucket 'audios' no existe en Supabase. Por favor, créalo manualmente en el dashboard (sección Storage y actívalo como 'Public').");
         console.log('⚠️ Sistema funcionará solo con texto hasta que el bucket sea creado manualmente.');
       } else if (bucketError) {
-        console.error('❌ Error al verificar bucket existente (después del listado):', bucketError.message);
+        console.error('❌ Error verificando bucket:', bucketError.message);
       } else {
-        console.log("✅ Bucket 'audios' ya existe y es accesible.");
+        console.log("✅ Bucket 'audios' ya existe.");
       }
     } catch (err) {
-      console.error('❌ Error general al acceder al bucket Supabase:', err.message);
+      console.error('❌ Error bucket Supabase:', err.message);
     }
-    // --- FIN DE TU CÓDIGO EXISTENTE ---
-
   } else {
-    console.log('⚠️ Variables de ElevenLabs no configuradas. El sistema funcionará solo con texto.');
+    console.log('⚠️ Variables ElevenLabs faltantes:', varsAudio.filter(v => !process.env[v]));
+    console.log('📝 Sistema funcionará solo con texto.');
   }
+
+  return true;
 };
 
-
-// Iniciar el servidor y las operaciones asíncronas
-app.listen(port, async () => {
-  console.log(`🚀 Servidor escuchando en el puerto ${port}`);
-  await inicializarSistema(); // Llama a la función de inicialización aquí
+// AL FINAL DEL ARCHIVO:
+// Iniciar el servidor solo si la inicialización es exitosa
+inicializarSistema().then((success) => {
+  if (success) {
+    app.listen(port, () => {
+      console.log(`🎉 Servidor escuchando en el puerto ${port}`);
+      console.log(`🚀 Accede al webhook en: http://localhost:${port}/webhook`);
+      console.log(`🧪 Prueba el sistema de audio en: http://localhost:${port}/test-audio/:phone`);
+      console.log(`🧪 Prueba ElevenLabs/Supabase en: http://localhost:${port}/test-elevenlabs`);
+      console.log(`⚙️ Gestiona preferencias de cliente en: http://localhost:${port}/cliente/:id/preferencia`);
+      console.log(`📊 Ve estadísticas de audio en: http://localhost:${port}/stats-audio`);
+      console.log(`🔄 Actualiza todos los prompts a ventas: http://localhost:${port}/update-all-prompts-ventas`);
+      console.log(`⏪ Restaura prompt de cliente: http://localhost:${port}/cliente/:id/restaurar-prompt`);
+    });
+    // Intervalos para procesar mensajes
+    setInterval(responderMensajesEntrantesOptimizado, 5 * 60 * 1000); // Cada 5 minutos
+    setInterval(procesarMensajesDesdeUnicorn, 2 * 60 * 1000); // Cada 2 minutos
+  } else {
+    console.error('🚫 Fallo al inicializar el sistema. El servidor no se iniciará.');
+  }
+}).catch(err => {
+  console.error('❌ Error crítico durante la inicialización del sistema:', err);
+  process.exit(1);
 });
