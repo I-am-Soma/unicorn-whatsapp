@@ -146,7 +146,7 @@ class AudioManager {
     this.model = process.env.ELEVENLABS_MODEL || 'eleven_multilingual_v2';
     this.baseUrl = 'https://api.elevenlabs.io/v1';
     this.supabase = supabase; // Pasar la instancia de Supabase
-    this.bucketName = 'whatsapp_audios'; // Nombre del bucket en Supabase Storage
+    this.bucketName = 'audios'; // AQUI SE CAMBIO EL NOMBRE DEL BUCKET A 'audios'
   }
 
   async generarAudio(texto) {
@@ -293,7 +293,7 @@ const obtenerOCrearConfigCliente = async (clienteId, numeroWhatsapp) => {
           .insert([{
             nombre: `Cliente ${numeroWhatsapp || 'Default'}`,
             numero_whatsapp: numeroWhatsapp,
-            tipo_respuesta: 'texto', // <--- Considera cambiar a 'voz' si es tu default deseado
+            tipo_respuesta: 'texto', // <--- Considera cambiar a 'voz' si es tu default deseado para clientes nuevos
             prompt_inicial: generarPromptVentasPersonalizado({ nombre: `Cliente ${numeroWhatsapp || 'Default'}` }),
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString() // ¡Asegúrate de que esta columna exista en Supabase!
@@ -1027,15 +1027,15 @@ const inicializarSistema = async () => {
 
     // Inicializar bucket de Supabase Storage
     try {
-      const { data: bucketData, error: bucketError } = await supabase.storage.getBucket('whatsapp_audios');
+      const { data: bucketData, error: bucketError } = await supabase.storage.getBucket('audios'); // AQUI SE CAMBIO EL NOMBRE DEL BUCKET A 'audios'
       if (bucketError && bucketError.message === 'Bucket not found') {
         // NOTA: Ya no se intenta crear el bucket aquí. Esto debe hacerse manualmente.
-        console.error("❌ ERROR: El bucket 'whatsapp_audios' no existe en Supabase. Por favor, créalo manualmente en el dashboard (sección Storage y actívalo como 'Public').");
+        console.error("❌ ERROR: El bucket 'audios' no existe en Supabase. Por favor, créalo manualmente en el dashboard (sección Storage y actívalo como 'Public').");
         console.log('⚠️ Sistema funcionará solo con texto hasta que el bucket sea creado manualmente.');
       } else if (bucketError) {
         console.error('❌ Error verificando bucket:', bucketError.message);
       } else {
-        console.log("✅ Bucket 'whatsapp_audios' ya existe.");
+        console.log("✅ Bucket 'audios' ya existe.");
       }
     } catch (err) {
       console.error('❌ Error bucket Supabase:', err.message);
