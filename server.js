@@ -9,6 +9,8 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 8080;
 
+// Asegúrate de que SUPABASE_ANON_KEY sea la service_role key en Railway
+// para permisos de administrador en el backend, si no, te dará errores de RLS.
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 const twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
 
@@ -190,21 +192,31 @@ class AudioManager {
       console.log('☁️ Subiendo audio a Supabase Storage...');
       const fileName = `audio_msg_${clienteId}_${Date.now()}.mp3`;
 
-      // Verificar/crear bucket con mejor manejo de errores
-      const { data: bucketData, error: bucketError } = await this.supabase.storage.getBucket(this.bucketName);
+      // --- CAMBIO CLAVE AQUÍ ---
+      // 1. Intentar verificar si el bucket existe.
+      const { data: bucketData, error: bucketGetError } = await this.supabase.storage.getBucket(this.bucketName);
 
-      if (bucketError && bucketError.message === 'Bucket not found') {
+      if (bucketGetError && bucketGetError.message === 'Bucket not found') {
         console.log(`Bucket '${this.bucketName}' no encontrado, intentando crearlo...`);
         const { error: createBucketError } = await this.supabase.storage.createBucket(this.bucketName, { public: true });
+
         if (createBucketError) {
-          console.error('❌ Error al crear el bucket en Supabase Storage:', createBucketError.message);
-          throw createBucketError;
+          // Si la creación falla (ej. por "must be owner of table buckets"),
+          // loguear el error pero NO lanzar una excepción. Asumir que ya existe.
+          console.error(`❌ Error al crear el bucket '${this.bucketName}':`, createBucketError.message);
+          console.log(`⚠️ Asumiendo que el bucket '${this.bucketName}' ya existe y continuando con la subida.`);
+        } else {
+          console.log(`✅ Bucket '${this.bucketName}' creado exitosamente.`);
         }
-        console.log(`✅ Bucket '${this.bucketName}' creado exitosamente.`);
-      } else if (bucketError) {
-        console.error('❌ Error al verificar el bucket en Supabase Storage:', bucketError.message);
-        throw bucketError;
+      } else if (bucketGetError) {
+        // Otro tipo de error al obtener el bucket, loguear y asumir que existe.
+        console.error(`❌ Error al verificar el bucket '${this.bucketName}':`, bucketGetError.message);
+        console.log(`⚠️ Asumiendo que el bucket '${this.bucketName}' ya existe y continuando con la subida.`);
+      } else {
+        console.log(`✅ Bucket '${this.bucketName}' ya existe.`);
       }
+      // --- FIN CAMBIO CLAVE ---
+
 
       // Subir archivo
       const { data, error } = await this.supabase.storage
@@ -258,6 +270,7 @@ const obtenerOCrearConfigCliente = async (clienteId, numeroWhatsapp) => {
     let cliente = null;
     let errorConsulta = null;
 
+    // Primero intentar buscar por ID si está disponible
     if (clienteId) {
       const { data, error } = await supabase
         .from('clientes')
@@ -266,7 +279,10 @@ const obtenerOCrearConfigCliente = async (clienteId, numeroWhatsapp) => {
         .single();
       cliente = data;
       errorConsulta = error;
-    } else if (numeroWhatsapp) {
+    }
+
+    // Si no se encontró por ID o no se proporcionó ID, intentar buscar por número
+    if (!cliente && numeroWhatsapp) {
       const { data, error } = await supabase
         .from('clientes')
         .select('id, nombre, tipo_respuesta, lista_servicios')
@@ -294,6 +310,8 @@ const obtenerOCrearConfigCliente = async (clienteId, numeroWhatsapp) => {
       if (createError) {
         console.error('❌ Error al crear cliente por defecto:', createError.message);
         // Fallback a un objeto cliente mínimo si la creación falla
+        // Importante: Si la creación del cliente falla aquí, no tendremos un ID real para las conversaciones.
+        // Asegúrate de que las RLS en 'clientes' permitan la inserción con la 'service_role' key.
         return { id: 1, tipo_respuesta: 'texto', nombre: 'Cliente por defecto' };
       }
       console.log(`✅ Cliente por defecto creado con ID: ${newClient.id}`);
@@ -301,7 +319,8 @@ const obtenerOCrearConfigCliente = async (clienteId, numeroWhatsapp) => {
 
     } else if (errorConsulta) {
       console.error('❌ Error consultando cliente:', errorConsulta.message);
-      return { id: clienteId || 1, tipo_respuesta: 'texto', nombre: 'Cliente' }; // Fallback si hay otro tipo de error
+      // Fallback si hay otro tipo de error al consultar el cliente
+      return { id: clienteId || 1, tipo_respuesta: 'texto', nombre: 'Cliente' };
     }
 
     console.log(`✅ Config cliente: ${cliente?.nombre} - Respuesta: ${cliente?.tipo_respuesta || 'texto'}`);
@@ -987,26 +1006,31 @@ const inicializarSistema = async () => {
   if (audioCompleto) {
     console.log('✅ Todas las variables de ElevenLabs configuradas');
 
-    // Inicializar bucket de Supabase Storage
+    // --- CAMBIO CLAVE AQUÍ (solo para inicialización) ---
+    // En la inicialización, si da error al crear, loguear y continuar.
     try {
       const { data: bucketData, error: bucketError } = await supabase.storage.getBucket('whatsapp_audios');
       if (bucketError && bucketError.message === 'Bucket not found') {
         console.log("📦 Creando bucket 'whatsapp_audios'...");
         const { error: createBucketError } = await supabase.storage.createBucket('whatsapp_audios', { public: true });
         if (createBucketError) {
-          console.error('❌ Error al crear bucket:', createBucketError.message);
-          console.log('⚠️ Sistema funcionará solo con texto');
+          console.error(`❌ Error al crear bucket en inicialización:`, createBucketError.message);
+          console.log('⚠️ Asumiendo que el bucket ya existe y el sistema funcionará con texto/audio si el bucket está listo.');
         } else {
           console.log("✅ Bucket 'whatsapp_audios' creado exitosamente.");
         }
       } else if (bucketError) {
-        console.error('❌ Error verificando bucket:', bucketError.message);
+        console.error(`❌ Error verificando bucket en inicialización:`, bucketError.message);
+        console.log('⚠️ Asumiendo que el bucket ya existe y el sistema funcionará con texto/audio si el bucket está listo.');
       } else {
         console.log("✅ Bucket 'whatsapp_audios' ya existe.");
       }
     } catch (err) {
-      console.error('❌ Error bucket Supabase:', err.message);
+      console.error('❌ Error general durante verificación/creación de bucket en inicialización:', err.message);
+      console.log('⚠️ Asumiendo que el bucket ya existe y el sistema funcionará con texto/audio si el bucket está listo.');
     }
+    // --- FIN CAMBIO CLAVE ---
+
   } else {
     console.log('⚠️ Variables ElevenLabs faltantes:', varsAudio.filter(v => !process.env[v]));
     console.log('📝 Sistema funcionará solo con texto.');
