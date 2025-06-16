@@ -948,10 +948,10 @@ inicializarSistema().then((success) => {
     console.error('🚫 Fallo al inicializar el sistema. El servidor no se iniciará.');
   }
 }).catch(err => {
-  console.error('❌ Error crítico durante la inicialización del sistema:', err);
-  process.exit(1);
-});('conversations').update({ procesar: true, status: 'Failed: No Client' }).eq('id', id); // Marcar como fallido
-        return;
+  if (!cliente_id_actual) {
+  console.error(`❌ No se pudo obtener/crear un cliente ID válido para el mensaje ${id}. Se omite el procesamiento.`);
+  await supabase.from('conversations').update({ procesar: true, status: 'Failed: No Client' }).eq('id', id);
+  return; // ← Cambiar continue por return
       }
 
       console.log(`\n📞 Procesando lead ID: ${id} de ${lead_phone} (Cliente ID real: ${cliente_id_actual})`);
