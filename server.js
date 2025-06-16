@@ -191,15 +191,30 @@ class AudioManager {
       const fileName = `audio_msg_${clienteId}_${Date.now()}.mp3`;
 
       // Verificar si el bucket existe. Ya NO intentamos crearlo programáticamente.
-      const { data: bucketData, error: bucketError } = await this.supabase.storage.getBucket(this.bucketName);
+      async subirASupabaseStorage(audioBuffer, clienteId) {
+  try {
+    console.log('☁️ Subiendo audio a Supabase Storage...');
+    const fileName = `audio_msg_${clienteId}_${Date.now()}.mp3`;
 
-      if (bucketError && bucketError.message === 'Bucket not found') {
-        console.error(`❌ ERROR: El bucket '${this.bucketName}' no existe. Por favor, créalo manualmente en el dashboard de Supabase (sección Storage y actívalo como "Public").`);
-        throw new Error(`Bucket Supabase '${this.bucketName}' no encontrado. Por favor, créalo manualmente.`);
-      } else if (bucketError) {
-        console.error('❌ Error al verificar el bucket en Supabase Storage:', bucketError.message);
-        throw bucketError;
-      }
+    // Verificar si el bucket existe usando listBuckets()
+    const { data: buckets, error: listError } = await this.supabase.storage.listBuckets();
+
+    if (listError) {
+      console.error('❌ Error listando buckets:', listError.message);
+      throw listError;
+    }
+
+    const bucketExists = buckets.some(bucket => bucket.name === this.bucketName);
+
+    if (!bucketExists) {
+      console.error(`❌ ERROR: El bucket '${this.bucketName}' no existe. Por favor, créalo manualmente en el dashboard de Supabase (sección Storage y actívalo como "Public").`);
+      throw new Error(`Bucket Supabase '${this.bucketName}' no encontrado. Por favor, créalo manualmente.`);
+    }
+
+    console.log(`✅ Bucket '${this.bucketName}' encontrado y listo para usar.`);
+
+    // Subir archivo...
+    // (el resto del código permanece igual)
       // Si llegamos aquí, el bucket existe o no hubo error al verificarlo.
 
       // Subir archivo
