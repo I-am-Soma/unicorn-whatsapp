@@ -1031,8 +1031,8 @@ inicializarSistema().then((success) => {
       console.log(`⏪ Restaura prompt de cliente: http://localhost:${port}/cliente/:id/restaurar-prompt`);
     });
     // Intervalos para procesar mensajes
-    setInterval(responderMensajesEntrantesOptimizado, 5 * 60 * 1000); // Cada 5 minutos
-    setInterval(procesarMensajesDesdeUnicorn, 2 * 60 * 1000); // Cada 2 minutos
+   setInterval(responderMensajesEntrantesOptimizado, 10 * 1000); // Cada 10 segundos
+setInterval(procesarMensajesDesdeUnicorn, 10 * 1000); // Cada 10 segundos
   } else {
     console.error('🚫 Fallo al inicializar el sistema. El servidor no se iniciará.');
   }
