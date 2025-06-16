@@ -190,32 +190,22 @@ class AudioManager {
       console.log('☁️ Subiendo audio a Supabase Storage...');
       const fileName = `audio_msg_${clienteId}_${Date.now()}.mp3`;
 
-      // Verificar si el bucket existe. Ya NO intentamos crearlo programáticamente.
-      async subirASupabaseStorage(audioBuffer, clienteId) {
-  try {
-    console.log('☁️ Subiendo audio a Supabase Storage...');
-    const fileName = `audio_msg_${clienteId}_${Date.now()}.mp3`;
+      // Verificar si el bucket existe usando listBuckets()
+      const { data: buckets, error: listError } = await this.supabase.storage.listBuckets();
 
-    // Verificar si el bucket existe usando listBuckets()
-    const { data: buckets, error: listError } = await this.supabase.storage.listBuckets();
+      if (listError) {
+        console.error('❌ Error listando buckets:', listError.message);
+        throw listError;
+      }
 
-    if (listError) {
-      console.error('❌ Error listando buckets:', listError.message);
-      throw listError;
-    }
+      const bucketExists = buckets.some(bucket => bucket.name === this.bucketName);
 
-    const bucketExists = buckets.some(bucket => bucket.name === this.bucketName);
+      if (!bucketExists) {
+        console.error(`❌ ERROR: El bucket '${this.bucketName}' no existe. Por favor, créalo manualmente en el dashboard de Supabase (sección Storage y actívalo como "Public").`);
+        throw new Error(`Bucket Supabase '${this.bucketName}' no encontrado. Por favor, créalo manualmente.`);
+      }
 
-    if (!bucketExists) {
-      console.error(`❌ ERROR: El bucket '${this.bucketName}' no existe. Por favor, créalo manualmente en el dashboard de Supabase (sección Storage y actívalo como "Public").`);
-      throw new Error(`Bucket Supabase '${this.bucketName}' no encontrado. Por favor, créalo manualmente.`);
-    }
-
-    console.log(`✅ Bucket '${this.bucketName}' encontrado y listo para usar.`);
-
-    // Subir archivo...
-    // (el resto del código permanece igual)
-      // Si llegamos aquí, el bucket existe o no hubo error al verificarlo.
+      console.log(`✅ Bucket '${this.bucketName}' encontrado y listo para usar.`);
 
       // Subir archivo
       const { data, error } = await this.supabase.storage
@@ -779,7 +769,6 @@ const actualizarPromptsAVentas = async () => {
   }
 };
 
-
 // ---
 // Testeo y Inicialización del Sistema
 // 🧪 Test de audio para un número específico
@@ -980,7 +969,6 @@ app.post('/cliente/:id/restaurar-prompt', async (req, res) => {
   }
 });
 
-
 // ---
 // INICIALIZAR SISTEMA AL STARTUP
 const inicializarSistema = async () => {
@@ -1009,19 +997,24 @@ const inicializarSistema = async () => {
   if (audioCompleto) {
     console.log('✅ Todas las variables de ElevenLabs configuradas');
 
-    // Inicializar bucket de Supabase Storage
+    // Inicializar bucket de Supabase Storage - USAR listBuckets() EN LUGAR DE getBucket()
     try {
-      const { data: bucketData, error: bucketError } = await supabase.storage.getBucket('audios'); // <--- AQUI SE CAMBIO EL NOMBRE DEL BUCKET A 'audios'
-      if (bucketError && bucketError.message === 'Bucket not found') {
-        console.error("❌ ERROR: El bucket 'audios' no existe en Supabase. Por favor, créalo manualmente en el dashboard (sección Storage y actívalo como 'Public').");
-        console.log('⚠️ Sistema funcionará solo con texto hasta que el bucket sea creado manualmente.');
-      } else if (bucketError) {
-        console.error('❌ Error verificando bucket:', bucketError.message);
+      const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+      
+      if (listError) {
+        console.error('❌ Error listando buckets:', listError.message);
       } else {
-        console.log("✅ Bucket 'audios' ya existe.");
+        const bucketExists = buckets.some(bucket => bucket.name === 'audios');
+        
+        if (!bucketExists) {
+          console.error("❌ ERROR: El bucket 'audios' no existe en Supabase. Por favor, créalo manualmente en el dashboard (sección Storage y actívalo como 'Public').");
+          console.log('⚠️ Sistema funcionará solo con texto hasta que el bucket sea creado manualmente.');
+        } else {
+          console.log("✅ Bucket 'audios' encontrado y listo para usar.");
+        }
       }
     } catch (err) {
-      console.error('❌ Error bucket Supabase:', err.message);
+      console.error('❌ Error verificando bucket Supabase:', err.message);
     }
   } else {
     console.log('⚠️ Variables ElevenLabs faltantes:', varsAudio.filter(v => !process.env[v]));
