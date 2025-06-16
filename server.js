@@ -190,22 +190,17 @@ class AudioManager {
       console.log('☁️ Subiendo audio a Supabase Storage...');
       const fileName = `audio_msg_${clienteId}_${Date.now()}.mp3`;
 
-      // Verificar si el bucket existe usando listBuckets()
-      const { data: buckets, error: listError } = await this.supabase.storage.listBuckets();
+      // Verificar si el bucket existe. Ya NO intentamos crearlo programáticamente.
+      const { data: bucketData, error: bucketError } = await this.supabase.storage.getBucket(this.bucketName);
 
-      if (listError) {
-        console.error('❌ Error listando buckets:', listError.message);
-        throw listError;
-      }
-
-      const bucketExists = buckets.some(bucket => bucket.name === this.bucketName);
-
-      if (!bucketExists) {
+      if (bucketError && bucketError.message === 'Bucket not found') {
         console.error(`❌ ERROR: El bucket '${this.bucketName}' no existe. Por favor, créalo manualmente en el dashboard de Supabase (sección Storage y actívalo como "Public").`);
         throw new Error(`Bucket Supabase '${this.bucketName}' no encontrado. Por favor, créalo manualmente.`);
+      } else if (bucketError) {
+        console.error('❌ Error al verificar el bucket en Supabase Storage:', bucketError.message);
+        throw bucketError;
       }
-
-      console.log(`✅ Bucket '${this.bucketName}' encontrado y listo para usar.`);
+      // Si llegamos aquí, el bucket existe o no hubo error al verificarlo.
 
       // Subir archivo
       const { data, error } = await this.supabase.storage
@@ -515,6 +510,103 @@ const responderMensajesEntrantesOptimizado = async () => {
 
       if (!cliente_id_actual) {
         console.error(`❌ No se pudo obtener/crear un cliente ID válido para el mensaje ${id}. Se omite el procesamiento.`);
+        await supabase.from('conversations').update({ procesar: true, status: 'Failed: No Client' }).eq('id', id); // Marcar como fallido
+        continue;
+      }
+
+      console.log(`\n📞 Procesando lead ID: ${id} de ${lead_phone} (Cliente ID real: ${cliente_id_actual})`);
+
+      try {
+        const intencion = detectarIntencionVenta(last_message || '');
+        console.log(`🎯 Intención detectada:`, Object.keys(intencion).filter(k => intencion[k]).join(', ') || 'general');
+
+        // Generar historial con el ID del cliente real, si aplica
+        const messages = await generarHistorialGPT(lead_phone, supabase, cliente_id_actual); // Pasar cliente_id_actual
+        if (!messages) {
+          console.error('❌ No se pudo generar historial para GPT');
+          await supabase.from('conversations').update({ procesar: true, status: 'Failed: GPT History' }).eq('id', id);
+          continue;
+        }
+
+        console.log('🧠 Enviando a OpenAI con parámetros optimizados...');
+
+        const textoAI = await generarRespuestaVentas(messages, intencion);
+        console.log(`🎯 Respuesta de AI optimizada: ${textoAI.substring(0, 100)}...`);
+
+        const esRespuestaVentas = /\$|\d+|precio|costo|oferta|disponible|cuando|cita|reservar|llamar/i.test(textoAI);
+        console.log(`💰 Respuesta orientada a ventas: ${esRespuestaVentas ? 'SÍ' : 'NO'}`);
+
+        // Marcar el mensaje original como procesado
+        await supabase.from('conversations').update({ procesar: true, cliente_id: cliente_id_actual }).eq('id', id);
+
+        // Insertar respuesta
+        await supabase.from('conversations').insert([{
+          lead_phone,
+          last_message: textoAI,
+          agent_name: 'Unicorn AI',
+          status: esRespuestaVentas ? 'Sales Pitch' : 'In Progress',
+          created_at: new Date().toISOString(),
+          origen: 'unicorn',
+          procesar: true,
+          cliente_id: cliente_id_actual // ¡Usar el ID del cliente REAL!
+        }]);
+
+        // 🎵 USAR FUNCIÓN QUE DETECTA AUDIO/TEXTO CON LA CONFIGURACIÓN REAL DEL CLIENTE
+        await enviarMensajeSegunPreferencia(lead_phone, textoAI, clienteConfig);
+
+        console.log('✅ Mensaje entrante procesado exitosamente con audio/texto');
+
+      } catch (err) {
+        console.error(`❌ Error procesando entrada ${lead_phone}:`, err.message);
+
+        if (err.response?.status === 429 || err.response?.status >= 500) {
+          console.log('⚠️ Enviando respuesta de fallback orientada a ventas...');
+          const fallbackMessage = "¡Hola! Tengo exactamente lo que necesitas. Permíteme llamarte en 5 minutos para darte precios especiales que solo ofrezco por teléfono. ¿Cuál es el mejor número para contactarte?";
+          await enviarMensajeSegunPreferencia(lead_phone, fallbackMessage, clienteConfig);
+          await supabase.from('conversations').update({ procesar: true, status: 'Failed: AI Error' }).eq('id', id);
+        } else {
+          await supabase.from('conversations').update({ procesar: true, status: 'Failed: Unknown' }).eq('id', id);
+        }
+      }
+    }
+  } catch (mainErr) {
+    console.error('❌ Error crítico en responderMensajesEntrantesOptimizado:', mainErr.message);
+  } finally {
+    console.log('--- Finalizando ciclo de responderMensajesEntrantesOptimizado ---');
+  }
+};
+
+// 🔁 Procesa mensajes salientes desde Unicorn (TAMBIÉN OPTIMIZADO CON AUDIO)
+const procesarMensajesDesdeUnicorn = async () => {
+  console.log('--- Iniciando ciclo de procesarMensajesDesdeUnicorn ---');
+  try {
+    const { data: pendientes, error } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('origen', 'unicorn')
+      .eq('procesar', false);
+
+    if (error) {
+      console.error('❌ Error consultando mensajes Unicorn:', error.message);
+      return;
+    }
+
+    if (!pendientes?.length) {
+      console.log('⏳ No hay mensajes nuevos de Unicorn...');
+      return;
+    }
+
+    console.log(`🤖 Procesando ${pendientes.length} mensajes de Unicorn con OPTIMIZACIÓN + AUDIO`);
+
+    for (const mensaje of pendientes) {
+      const { id, lead_phone, last_message } = mensaje; // Eliminamos cliente_id de aquí
+
+      // **TERCER CAMBIO CLAVE:** Obtener la configuración del cliente REAL por el número de teléfono
+      const clienteConfig = await obtenerOCrearConfigCliente(lead_phone);
+      const cliente_id_actual = clienteConfig?.id || null;
+
+      if (!cliente_id_actual) {
+        console.error(`❌ No se pudo obtener/crear un cliente ID válido para el mensaje ${id}. Se omite el procesamiento.`);
         await supabase.from('conversations').update({ procesar: true, status: 'Failed: No Client' }).eq('id', id);
         continue;
       }
@@ -671,6 +763,7 @@ const actualizarPromptsAVentas = async () => {
     return { actualizados: 0, errores: clientes.length || 0 };
   }
 };
+
 
 // ---
 // Testeo y Inicialización del Sistema
@@ -872,6 +965,7 @@ app.post('/cliente/:id/restaurar-prompt', async (req, res) => {
   }
 });
 
+
 // ---
 // INICIALIZAR SISTEMA AL STARTUP
 const inicializarSistema = async () => {
@@ -900,24 +994,19 @@ const inicializarSistema = async () => {
   if (audioCompleto) {
     console.log('✅ Todas las variables de ElevenLabs configuradas');
 
-    // Inicializar bucket de Supabase Storage - USAR listBuckets() EN LUGAR DE getBucket()
+    // Inicializar bucket de Supabase Storage
     try {
-      const { data: buckets, error: listError } = await supabase.storage.listBuckets();
-      
-      if (listError) {
-        console.error('❌ Error listando buckets:', listError.message);
+      const { data: bucketData, error: bucketError } = await supabase.storage.getBucket('audios'); // <--- AQUI SE CAMBIO EL NOMBRE DEL BUCKET A 'audios'
+      if (bucketError && bucketError.message === 'Bucket not found') {
+        console.error("❌ ERROR: El bucket 'audios' no existe en Supabase. Por favor, créalo manualmente en el dashboard (sección Storage y actívalo como 'Public').");
+        console.log('⚠️ Sistema funcionará solo con texto hasta que el bucket sea creado manualmente.');
+      } else if (bucketError) {
+        console.error('❌ Error verificando bucket:', bucketError.message);
       } else {
-        const bucketExists = buckets.some(bucket => bucket.name === 'audios');
-        
-        if (!bucketExists) {
-          console.error("❌ ERROR: El bucket 'audios' no existe en Supabase. Por favor, créalo manualmente en el dashboard (sección Storage y actívalo como 'Public').");
-          console.log('⚠️ Sistema funcionará solo con texto hasta que el bucket sea creado manualmente.');
-        } else {
-          console.log("✅ Bucket 'audios' encontrado y listo para usar.");
-        }
+        console.log("✅ Bucket 'audios' ya existe.");
       }
     } catch (err) {
-      console.error('❌ Error verificando bucket Supabase:', err.message);
+      console.error('❌ Error bucket Supabase:', err.message);
     }
   } else {
     console.log('⚠️ Variables ElevenLabs faltantes:', varsAudio.filter(v => !process.env[v]));
@@ -950,101 +1039,4 @@ inicializarSistema().then((success) => {
 }).catch(err => {
   console.error('❌ Error crítico durante la inicialización del sistema:', err);
   process.exit(1);
-});('conversations').update({ procesar: true, status: 'Failed: No Client' }).eq('id', id); // Marcar como fallido
-        return;
-      }
-
-      console.log(`\n📞 Procesando lead ID: ${id} de ${lead_phone} (Cliente ID real: ${cliente_id_actual})`);
-
-      try {
-        const intencion = detectarIntencionVenta(last_message || '');
-        console.log(`🎯 Intención detectada:`, Object.keys(intencion).filter(k => intencion[k]).join(', ') || 'general');
-
-        // Generar historial con el ID del cliente real, si aplica
-        const messages = await generarHistorialGPT(lead_phone, supabase, cliente_id_actual); // Pasar cliente_id_actual
-        if (!messages) {
-          console.error('❌ No se pudo generar historial para GPT');
-          await supabase.from('conversations').update({ procesar: true, status: 'Failed: GPT History' }).eq('id', id);
-          continue;
-        }
-
-        console.log('🧠 Enviando a OpenAI con parámetros optimizados...');
-
-        const textoAI = await generarRespuestaVentas(messages, intencion);
-        console.log(`🎯 Respuesta de AI optimizada: ${textoAI.substring(0, 100)}...`);
-
-        const esRespuestaVentas = /\$|\d+|precio|costo|oferta|disponible|cuando|cita|reservar|llamar/i.test(textoAI);
-        console.log(`💰 Respuesta orientada a ventas: ${esRespuestaVentas ? 'SÍ' : 'NO'}`);
-
-        // Marcar el mensaje original como procesado
-        await supabase.from('conversations').update({ procesar: true, cliente_id: cliente_id_actual }).eq('id', id);
-
-        // Insertar respuesta
-        await supabase.from('conversations').insert([{
-          lead_phone,
-          last_message: textoAI,
-          agent_name: 'Unicorn AI',
-          status: esRespuestaVentas ? 'Sales Pitch' : 'In Progress',
-          created_at: new Date().toISOString(),
-          origen: 'unicorn',
-          procesar: true,
-          cliente_id: cliente_id_actual // ¡Usar el ID del cliente REAL!
-        }]);
-
-        // 🎵 USAR FUNCIÓN QUE DETECTA AUDIO/TEXTO CON LA CONFIGURACIÓN REAL DEL CLIENTE
-        await enviarMensajeSegunPreferencia(lead_phone, textoAI, clienteConfig);
-
-        console.log('✅ Mensaje entrante procesado exitosamente con audio/texto');
-
-      } catch (err) {
-        console.error(`❌ Error procesando entrada ${lead_phone}:`, err.message);
-
-        if (err.response?.status === 429 || err.response?.status >= 500) {
-          console.log('⚠️ Enviando respuesta de fallback orientada a ventas...');
-          const fallbackMessage = "¡Hola! Tengo exactamente lo que necesitas. Permíteme llamarte en 5 minutos para darte precios especiales que solo ofrezco por teléfono. ¿Cuál es el mejor número para contactarte?";
-          await enviarMensajeSegunPreferencia(lead_phone, fallbackMessage, clienteConfig);
-          await supabase.from('conversations').update({ procesar: true, status: 'Failed: AI Error' }).eq('id', id);
-        } else {
-          await supabase.from('conversations').update({ procesar: true, status: 'Failed: Unknown' }).eq('id', id);
-        }
-      }
-    }
-  } catch (mainErr) {
-    console.error('❌ Error crítico en responderMensajesEntrantesOptimizado:', mainErr.message);
-  } finally {
-    console.log('--- Finalizando ciclo de responderMensajesEntrantesOptimizado ---');
-  }
-};
-
-// 🔁 Procesa mensajes salientes desde Unicorn (TAMBIÉN OPTIMIZADO CON AUDIO)
-const procesarMensajesDesdeUnicorn = async () => {
-  console.log('--- Iniciando ciclo de procesarMensajesDesdeUnicorn ---');
-  try {
-    const { data: pendientes, error } = await supabase
-      .from('conversations')
-      .select('*')
-      .eq('origen', 'unicorn')
-      .eq('procesar', false);
-
-    if (error) {
-      console.error('❌ Error consultando mensajes Unicorn:', error.message);
-      return;
-    }
-
-    if (!pendientes?.length) {
-      console.log('⏳ No hay mensajes nuevos de Unicorn...');
-      return;
-    }
-
-    console.log(`🤖 Procesando ${pendientes.length} mensajes de Unicorn con OPTIMIZACIÓN + AUDIO`);
-
-    for (const mensaje of pendientes) {
-      const { id, lead_phone, last_message } = mensaje; // Eliminamos cliente_id de aquí
-
-      // **TERCER CAMBIO CLAVE:** Obtener la configuración del cliente REAL por el número de teléfono
-      const clienteConfig = await obtenerOCrearConfigCliente(lead_phone);
-      const cliente_id_actual = clienteConfig?.id || null;
-
-      if (!cliente_id_actual) {
-        console.error(`❌ No se pudo obtener/crear un cliente ID válido para el mensaje ${id}. Se omite el procesamiento.`);
-        await supabase.from
+});
