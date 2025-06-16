@@ -951,7 +951,7 @@ inicializarSistema().then((success) => {
   console.error('❌ Error crítico durante la inicialización del sistema:', err);
   process.exit(1);
 });('conversations').update({ procesar: true, status: 'Failed: No Client' }).eq('id', id); // Marcar como fallido
-        continue;
+        return;
       }
 
       console.log(`\n📞 Procesando lead ID: ${id} de ${lead_phone} (Cliente ID real: ${cliente_id_actual})`);
