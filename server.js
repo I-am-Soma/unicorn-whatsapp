@@ -246,59 +246,124 @@ class AudioManager {
 
 // ---
 // Lógica de Respuesta y Envío
-// 🔧 FUNCIÓN PARA OBTENER O CREAR CONFIGURACIÓN DEL CLIENTE (LÓGICA MEJORADA)
+// 🔧 FUNCIÓN ACTUALIZADA PARA OBTENER O CREAR CONFIGURACIÓN DEL CLIENTE (SIN SOBREESCRIBIR PROMPTS EXISTENTES)
 const obtenerOCrearConfigCliente = async (numeroWhatsapp) => {
   try {
     const cleanNumber = numeroWhatsapp.replace(/^whatsapp:/, '').replace(/\D/g, '');
-    console.log(`🔍 Buscando o creando configuración para número: ${cleanNumber}`);
+    console.log(`🔍 Buscando cliente para número: ${cleanNumber}`);
 
-    // 1. Intentar buscar por numeroWhatsapp primero (siempre la fuente de verdad)
-    if (cleanNumber) {
-      const { data, error } = await supabase
-        .from('clientes')
-        .select('id, nombre, tipo_respuesta, lista_servicios')
-        .eq('numero_whatsapp', cleanNumber)
-        .single();
-
-      if (data) {
-        console.log(`✅ Cliente encontrado por número ${cleanNumber}: ID ${data.id} (${data.nombre})`);
-        return data; // Si se encuentra por número, usamos esa configuración
-      } else if (error && error.code === 'PGRST116') {
-        console.log(`⚠️ Cliente no encontrado por número ${cleanNumber}.`);
-        // Continuar para crear cliente
-      } else if (error) {
-        console.error('❌ Error consultando cliente por número:', error.message);
-        // Fallback a crear cliente si hay un error inesperado
-      }
-    }
-
-    // 2. Si no se encontró por número, intentar crear uno por defecto
-    console.log(`⚠️ No se encontró cliente existente. Intentando crear uno por defecto para ${cleanNumber || 'desconocido'}...`);
-    const { data: newClient, error: createError } = await supabase
+    // 1. Intentar buscar cliente existente por número de WhatsApp
+    const { data, error } = await supabase
       .from('clientes')
-      .insert([{
-        nombre: `Cliente ${cleanNumber || 'Default'}`,
-        numero_whatsapp: cleanNumber,
-        tipo_respuesta: 'voz', // <--- ¡Cambiado a 'voz' por defecto para nuevos clientes!
-        prompt_inicial: generarPromptVentasPersonalizado({ nombre: `Cliente ${cleanNumber || 'Default'}` }),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }])
-      .select()
+      .select('*')
+      .eq('numero_whatsapp', cleanNumber)
       .single();
 
-    if (createError) {
-      console.error('❌ Error al crear cliente por defecto:', createError.message);
-      // Si falla la creación, el fallback es un objeto cliente mínimo (texto)
-      return { id: null, tipo_respuesta: 'texto', nombre: 'Cliente por defecto (creación fallida)' };
-    }
-    console.log(`✅ Cliente por defecto creado con ID: ${newClient.id}`);
-    return newClient;
+    if (data) {
+      console.log(`✅ Cliente encontrado ID ${data.id} (${data.nombre})`);
+      
+      // Si el cliente existe, verificar que tenga prompt_inicial válido
+      if (!data.prompt_inicial || data.prompt_inicial.trim() === '') {
+        console.log(`⚠️ Cliente ${data.id} sin prompt_inicial. Generando prompt por defecto...`);
+        
+        // Generar prompt personalizado basado en servicios existentes
+        let serviciosProcesados = [];
+        if (data.lista_servicios) {
+          try {
+            serviciosProcesados = typeof data.lista_servicios === 'string'
+              ? JSON.parse(data.lista_servicios)
+              : data.lista_servicios;
+          } catch (e) {
+            // Fallback para strings de servicios no JSON
+            serviciosProcesados = data.lista_servicios
+              .split('\n')
+              .filter(linea => linea.trim())
+              .map(linea => ({
+                nombre: linea.replace(/^[•\-\*]\s*/, '').trim(),
+                descripcion: linea.trim()
+              }));
+          }
+        }
 
-  } catch (error) {
-    console.error('❌ Error en obtenerOCrearConfigCliente (general catch):', error.message);
-    // Fallback final si algo falla inesperadamente
-    return { id: null, tipo_respuesta: 'texto', nombre: 'Cliente (error general)' };
+        const nuevoPrompt = generarPromptVentasPersonalizado(data, serviciosProcesados);
+        
+        // Actualizar solo el prompt_inicial, manteniendo todo lo demás
+        const { error: updateError } = await supabase
+          .from('clientes')
+          .update({
+            prompt_inicial: nuevoPrompt,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', data.id);
+
+        if (updateError) {
+          console.error('❌ Error actualizando prompt del cliente existente:', updateError.message);
+        } else {
+          console.log(`✅ Prompt generado para cliente existente ${data.id}`);
+          data.prompt_inicial = nuevoPrompt; // Actualizar el objeto local
+        }
+      }
+      return data;
+    } 
+
+    // 2. Si no se encuentra el cliente (error PGRST116), crear uno nuevo
+    if (error && error.code === 'PGRST116') {
+      console.log(`⚠️ Cliente no encontrado. Creando nuevo para ${cleanNumber}`);
+      
+      const clienteBase = {
+        nombre: `Cliente ${cleanNumber}`,
+        numero_whatsapp: cleanNumber
+      };
+
+      const promptInicial = generarPromptVentasPersonalizado(clienteBase, []);
+
+      const nuevoCliente = {
+        ...clienteBase,
+        tipo_respuesta: 'voz', // Por defecto voz para nuevos clientes
+        prompt_inicial: promptInicial,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      const { data: created, error: createError } = await supabase
+        .from('clientes')
+        .insert([nuevoCliente])
+        .select()
+        .single();
+
+      if (createError) {
+        console.error('❌ Error creando cliente por defecto:', createError.message);
+        return { 
+          id: null, 
+          tipo_respuesta: 'texto', 
+          nombre: 'Cliente fallido',
+          prompt_inicial: promptInicial // Fallback con prompt básico
+        };
+      }
+
+      console.log(`✅ Cliente creado ID ${created.id}`);
+      return created;
+    }
+
+    // 3. Si hay otro tipo de error
+    if (error) {
+      console.error('❌ Error al buscar cliente:', error.message);
+      return { 
+        id: null, 
+        tipo_respuesta: 'texto', 
+        nombre: 'Cliente error',
+        prompt_inicial: generarPromptVentasPersonalizado({ nombre: 'Cliente Error' }, [])
+      };
+    }
+
+  } catch (err) {
+    console.error('❌ Error en obtenerOCrearConfigCliente:', err.message);
+    return { 
+      id: null, 
+      tipo_respuesta: 'texto', 
+      nombre: 'Cliente error general',
+      prompt_inicial: generarPromptVentasPersonalizado({ nombre: 'Cliente Error General' }, [])
+    };
   }
 };
 
