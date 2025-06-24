@@ -1,54 +1,56 @@
-// googleAudioManager.js
-
-const { Storage } = require('@google-cloud/storage');
 const axios = require('axios');
-const path = require('path');
+const { Storage } = require('@google-cloud/storage');
 const crypto = require('crypto');
 
+// CONFIGURACIÓN: reemplaza con tus datos de Google Cloud
+const AI_ENGINE_URL = "https://unicorn-sales-ai-engine-multichannel-dialogue-api-565328654764.us-west1.run.app";
+const GOOGLE_API_KEY = "AIzaSyCsvxwwRlVT-d5MOlIoECcEpBRh0Y9L02k";
+const BUCKET_NAME = "unicorn-audio-us";  // El bucket que ya creaste
+
+// Inicializar Google Cloud Storage (requiere tener la credencial del service account configurada)
+const storage = new Storage();
+
 class GoogleAudioManager {
-  constructor() {
-    this.bucketName = process.env.GCS_AUDIO_BUCKET; // Ej: unicorn-audio-us
-    this.storage = new Storage({
-      projectId: process.env.GOOGLE_PROJECT_ID,
-      keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS // Ruta al JSON de credenciales
-    });
-  }
+  /**
+   * Genera el guion y el audio desde Google AI Studio
+   */
+  async generarGuionYAudio(params) {
+    try {
+      const response = await axios.post(`${AI_ENGINE_URL}/generate`, params, {
+        headers: { 'x-goog-api-key': GOOGLE_API_KEY }
+      });
 
-  generateFileName(text) {
-    const hash = crypto.createHash('md5').update(text).digest('hex');
-    return `audio_${hash}_${Date.now()}.mp3`;
-  }
-
-  async uploadAudioBuffer(audioBuffer, fileName) {
-    const bucket = this.storage.bucket(this.bucketName);
-    const file = bucket.file(fileName);
-    await file.save(audioBuffer, { contentType: 'audio/mpeg' });
-    await file.makePublic();
-    const publicUrl = `https://storage.googleapis.com/${this.bucketName}/${fileName}`;
-    console.log(`✅ Audio subido: ${publicUrl}`);
-    return publicUrl;
-  }
-
-  async generateAudioFromGoogleAI(text, voiceModelUrl, apiKey) {
-    const response = await axios.post(
-      voiceModelUrl,
-      { text: text },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': apiKey
-        },
-        responseType: 'arraybuffer'
+      if (!response.data || !response.data.guion_texto || !response.data.audio_base64) {
+        throw new Error('Respuesta incompleta del AI Engine.');
       }
-    );
 
-    return Buffer.from(response.data);
+      const audioBuffer = Buffer.from(response.data.audio_base64, 'base64');
+      const audioUrl = await this.subirAudio(audioBuffer);
+      return { texto: response.data.guion_texto, audioUrl };
+
+    } catch (error) {
+      console.error('❌ Error generando guion/audio:', error.message);
+      throw error;
+    }
   }
 
-  async processAudio(text, voiceModelUrl, apiKey) {
-    const fileName = this.generateFileName(text);
-    const audioBuffer = await this.generateAudioFromGoogleAI(text, voiceModelUrl, apiKey);
-    const publicUrl = await this.uploadAudioBuffer(audioBuffer, fileName);
+  /**
+   * Sube el audio a Google Cloud Storage y retorna la URL pública
+   */
+  async subirAudio(buffer) {
+    const filename = `audio_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.mp3`;
+    const bucket = storage.bucket(BUCKET_NAME);
+    const file = bucket.file(filename);
+
+    await file.save(buffer, {
+      metadata: { contentType: 'audio/mpeg' },
+      public: true,
+      resumable: false,
+    });
+
+    await file.makePublic();
+    const publicUrl = `https://storage.googleapis.com/${BUCKET_NAME}/${filename}`;
+    console.log('✅ Audio subido a:', publicUrl);
     return publicUrl;
   }
 }
