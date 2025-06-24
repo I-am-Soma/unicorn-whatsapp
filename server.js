@@ -1,7 +1,9 @@
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
+const { GoogleAudioManager } = require('./googleAudioManager');
 const twilio = require('twilio');
+const googleAudio = new GoogleAudioManager();
 const { generarHistorialGPT } = require('./generarHistorialGPT');
 require('dotenv').config();
 
@@ -313,7 +315,33 @@ const responderMensajesEntrantesOptimizado = async () => {
       }]);
 
       // Enviar por WhatsApp
-      await enviarMensajeTwilio(lead_phone, textoAI);
+      try {
+    // Primero generamos el audio desde Google Studio
+    const audioUrl = await googleAudio.processAudio(
+        textoAI,
+        'https://unicorn-sales-ai-engine-multichannel-dialogue-api-565328654764.us-west1.run.app/', 
+        'AIzaSyCsvxwwRlVT-d5MOlIoECcEpBRh0Y9L02k'
+    );
+
+    console.log('🎙️ Audio generado en Google Studio:', audioUrl);
+
+    // Enviar como audio (media) por WhatsApp
+    const to = lead_phone.startsWith('whatsapp:') ? lead_phone : `whatsapp:${lead_phone}`;
+    const from = process.env.TWILIO_WHATSAPP_NUMBER;
+    await twilioClient.messages.create({
+        from,
+        to,
+        mediaUrl: [audioUrl]
+    });
+
+    console.log('✅ Mensaje de audio enviado por WhatsApp');
+
+} catch (audioError) {
+    console.error('❌ Error al generar audio. Enviando solo texto.', audioError.message);
+    // Si falla el audio, enviamos texto como fallback:
+    await enviarMensajeTwilio(lead_phone, textoAI);
+}
+
       
       console.log('✅ Mensaje entrante procesado exitosamente');
       
