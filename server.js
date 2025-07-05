@@ -385,6 +385,8 @@ const procesarMensajesDesdeUnicorn = async () => {
     
     try {
       const modo = modo_respuesta || 'text'; // 🧠 Por defecto 'text'
+      console.log(`🎧 Modo de respuesta: ${modo}`);
+
       const intencion = detectarIntencionVenta(last_message || '');
       
       const messages = await generarHistorialGPT(lead_phone, supabase);
