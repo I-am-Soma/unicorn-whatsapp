@@ -380,7 +380,7 @@ const procesarMensajesDesdeUnicorn = async () => {
   console.log(`🤖 Procesando ${pendientes.length} mensajes de Unicorn con OPTIMIZACIÓN`);
 
   for (const mensaje of pendientes) {
-    const { id, lead_phone, cliente_id, last_message, modo_respuesta } = mensaje;
+    const { id, lead_phone, last_message, modo_respuesta } = mensaje;
     console.log(`\n🔄 Procesando mensaje ID: ${id} para ${lead_phone}`);
     
     try {
