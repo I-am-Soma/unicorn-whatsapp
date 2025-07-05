@@ -359,7 +359,7 @@ const responderMensajesEntrantesOptimizado = async () => {
   }
 };
 
-// 🔁 Procesa mensajes salientes desde Unicorn (TAMBIÉN OPTIMIZADO)
+// 🔁 Procesa mensajes salientes desde Unicorn (mensajes generados por el bot que necesitan ser enviados)
 const procesarMensajesDesdeUnicorn = async () => {
   const { data: pendientes, error } = await supabase
     .from('conversations')
@@ -368,86 +368,62 @@ const procesarMensajesDesdeUnicorn = async () => {
     .eq('procesar', false);
 
   if (error) {
-    console.error('❌ Error consultando mensajes Unicorn:', error.message);
+    console.error('❌ Error consultando mensajes Unicorn pendientes:', error.message);
     return;
   }
 
   if (!pendientes?.length) {
-    console.log('⏳ No hay mensajes nuevos de Unicorn...');
+    console.log('⏳ No hay mensajes nuevos de Unicorn para enviar...');
     return;
   }
 
-  console.log(`🤖 Procesando ${pendientes.length} mensajes de Unicorn con OPTIMIZACIÓN`);
+  console.log(`🤖 Procesando ${pendientes.length} mensajes de Unicorn para envío`);
 
   for (const mensaje of pendientes) {
-    const { id, lead_phone, last_message, modo_respuesta } = mensaje;
-    console.log(`\n🔄 Procesando mensaje ID: ${id} para ${lead_phone}`);
-    
-    try {
-      const modo = modo_respuesta || 'text'; // 🧠 Por defecto 'text'
-      console.log(`🎧 Modo de respuesta: ${modo}`);
+    const { id, lead_phone, last_message, cliente_id, modo_respuesta } = mensaje;
+    console.log(`\n🔄 Procesando mensaje de Unicorn ID: ${id} para ${lead_phone}`);
+    console.log(`🎧 Modo de respuesta: ${modo_respuesta}`);
 
-      const intencion = detectarIntencionVenta(last_message || '');
-      
-      const messages = await generarHistorialGPT(lead_phone, supabase);
-      if (!messages) {
-        console.error('❌ No se pudo generar historial para GPT');
-        continue;
+    try {
+      let audioUrl = null;
+
+      if (modo_respuesta === 'audio' && process.env.GOOGLE_AUDIO_API_URL && process.env.GOOGLE_AUDIO_API_KEY) {
+        console.log('🎧 Generando audio con Google Audio API...');
+
+        const response = await axios.post(
+          process.env.GOOGLE_AUDIO_API_URL,
+          { text: last_message },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': process.env.GOOGLE_AUDIO_API_KEY
+            }
+          }
+        );
+
+        if (!response.data?.audioUrl) {
+          console.warn('⚠️ Google Audio API no devolvió audioUrl, se enviará texto.');
+        } else {
+          audioUrl = response.data.audioUrl;
+          console.log(`🔊 Audio generado: ${audioUrl}`);
+        }
       }
 
-      console.log('🧠 Enviando a OpenAI con parámetros optimizados...');
-      const textoAI = await generarRespuestaVentas(messages, intencion);
-      console.log(`🎯 Respuesta de AI: ${textoAI.substring(0, 100)}...`);
-
-      // ✅ Marcar como procesado
+      // Marcar como procesado
       await supabase.from('conversations').update({ procesar: true }).eq('id', id);
 
-      // ✅ Insertar nueva respuesta con modo_respuesta incluido
-      await supabase.from('conversations').insert([{
-        lead_phone,
-        last_message: textoAI,
-        agent_name: 'Unicorn AI',
-        status: 'In Progress',
-        created_at: new Date().toISOString(),
-        origen: 'unicorn',
-        procesar: true,
-        cliente_id: cliente_id || 1,
-        modo_respuesta: modo
-      }]);
+      // Enviar el mensaje (texto o audio)
+      await enviarMensajeTwilio(lead_phone, last_message, audioUrl);
 
-      // ✅ Enviar audio o texto según el modo
-      if (modo === 'audio') {
-        try {
-          const audioUrl = await googleAudio.processAudio(
-            textoAI,
-            process.env.GOOGLE_AUDIO_API_URL,
-            process.env.GOOGLE_AUDIO_API_KEY
-          );
-
-          console.log('🎙️ Audio generado en Google Studio:', audioUrl);
-
-          await twilioClient.messages.create({
-            from: process.env.TWILIO_WHATSAPP_NUMBER,
-            to: lead_phone.startsWith('whatsapp:') ? lead_phone : `whatsapp:${lead_phone}`,
-            mediaUrl: [audioUrl]
-          });
-
-          console.log('✅ Mensaje de audio enviado por WhatsApp');
-        } catch (audioError) {
-          console.error('❌ Error generando audio. Enviando texto.', audioError.message);
-          await enviarMensajeTwilio(lead_phone, textoAI);
-        }
-      } else {
-        await enviarMensajeTwilio(lead_phone, textoAI);
-      }
-
-      console.log('✅ Mensaje Unicorn procesado exitosamente');
+      console.log('✅ Mensaje Unicorn procesado y enviado exitosamente');
 
     } catch (err) {
-      console.error(`❌ Error procesando unicorn ${lead_phone}:`, err.message);
+      console.error(`❌ Error procesando mensaje Unicorn saliente ${lead_phone} (ID: ${id}):`, err.message);
+      await supabase.from('conversations').update({ procesar: true, status: 'Error: Envío Unicorn' }).eq('id', id);
     }
   }
 };
+
 
 // 🔄 FUNCIÓN PARA ACTUALIZAR TODOS LOS PROMPTS A ORIENTACIÓN DE VENTAS
 const actualizarPromptsAVentas = async () => {
