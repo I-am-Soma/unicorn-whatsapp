@@ -310,7 +310,7 @@ const responderMensajesEntrantesOptimizado = async () => {
         status: esRespuestaVentas ? 'Sales Pitch' : 'In Progress',
         created_at: new Date().toISOString(),
         origen: 'unicorn',
-        procesar: true,
+        procesar: false,
         cliente_id: cliente_id || 1
       }]);
 
