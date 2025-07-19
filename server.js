@@ -181,12 +181,29 @@ const generarRespuestaVentas = async (messages, intencion) => {
   }
 };
 
-const enviarMensajeTwilio = async (numero, mensaje) => {
+const enviarMensajeTwilio = async (numero, mensaje, mediaUrl = null) => {
   try {
     const to = numero.startsWith('whatsapp:') ? numero : `whatsapp:${numero}`;
     const from = process.env.TWILIO_WHATSAPP_NUMBER;
-    const enviado = await twilioClient.messages.create({ from, to, body: mensaje });
-    console.log(`📤 Enviado a ${to}: ${mensaje.substring(0, 100)}...`);
+
+    if ((!mensaje || mensaje.trim() === '') && !mediaUrl) {
+      console.warn('⚠️ No se puede enviar mensaje vacío sin mediaUrl.');
+      return;
+    }
+
+    const options = {
+      from,
+      to,
+    };
+
+    if (mediaUrl) {
+      options.mediaUrl = [mediaUrl];
+    } else {
+      options.body = mensaje;
+    }
+
+    const enviado = await twilioClient.messages.create(options);
+    console.log(`📤 Enviado a ${to}: ${mensaje?.substring(0, 100)}...`);
     return enviado;
   } catch (error) {
     console.error(`❌ Error enviando a ${numero}:`, error.message);
