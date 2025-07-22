@@ -229,17 +229,16 @@ app.post('/webhook', async (req, res) => {
 
     // Guardar mensaje en conversations
     const { error } = await supabase.from('conversations').insert([{
-  lead_phone: phone,
-  last_message: message,
-  agent_name: name,
-  status: 'New',
-  created_at: new Date().toISOString(),
-  origen: 'whatsapp',
-  procesar: false,
-  cliente_id,
-  user_id: 'cb26c538-be0b-4581-9418-aad2059674aa' // ✅ Esta línea soluciona el problema
-}]);
-    
+      lead_phone: phone,
+      last_message: message,
+      agent_name: name,
+      status: 'New',
+      created_at: new Date().toISOString(),
+      origen: 'whatsapp',
+      procesar: false,
+      cliente_id
+    }]);
+
     if (error) {
       console.error('❌ Error al guardar en Supabase:', error);
       return res.status(500).json({ error: 'Insert error' });
@@ -254,7 +253,7 @@ app.post('/webhook', async (req, res) => {
 });
 
 // 🔄 FUNCIÓN OPTIMIZADA PARA PROCESAR MENSAJES ENTRANTES CON VENTAS
-  const responderMensajesEntrantesOptimizado = async () => {
+const responderMensajesEntrantesOptimizado = async () => {
   const { data: mensajes, error } = await supabase
     .from('conversations')
     .select('*')
@@ -275,38 +274,62 @@ app.post('/webhook', async (req, res) => {
   console.log(`📨 Procesando ${mensajes.length} mensajes entrantes con OPTIMIZACIÓN DE VENTAS`);
 
   for (const mensaje of mensajes) {
-    const { id, lead_phone, cliente_id, last_message, user_id } = mensaje;
-
+    const { id, lead_phone, cliente_id, last_message } = mensaje;
+    console.log(`\n📞 Procesando lead ID: ${id} de ${lead_phone}`);
+    
     try {
+      // Detectar intención del mensaje
       const intencion = detectarIntencionVenta(last_message || '');
+      console.log(`🎯 Intención detectada:`, Object.keys(intencion).filter(k => intencion[k]).join(', ') || 'general');
+
       const messages = await generarHistorialGPT(lead_phone, supabase);
-      if (!messages) continue;
+      if (!messages) {
+        console.error('❌ No se pudo generar historial para GPT');
+        continue;
+      }
 
+      console.log('🧠 Enviando a OpenAI con parámetros optimizados...');
+      
       const textoAI = await generarRespuestaVentas(messages, intencion);
+      console.log(`🎯 Respuesta de AI optimizada: ${textoAI.substring(0, 100)}...`);
 
+      // Validar que la respuesta sea orientada a ventas
+      const esRespuestaVentas = /\$|\d+|precio|costo|oferta|disponible|cuando|cita|reservar|llamar/i.test(textoAI);
+      console.log(`💰 Respuesta orientada a ventas: ${esRespuestaVentas ? 'SÍ' : 'NO'}`);
+
+      // Marcar como procesado
       await supabase.from('conversations').update({ procesar: true }).eq('id', id);
-
-      // ✅ Inserta respuesta como AI y conserva el user_id
+      
+      // Insertar respuesta
       await supabase.from('conversations').insert([{
         lead_phone,
         last_message: textoAI,
         agent_name: 'Unicorn AI',
-        status: 'Sales Pitch',
+        status: esRespuestaVentas ? 'Sales Pitch' : 'In Progress',
         created_at: new Date().toISOString(),
         origen: 'unicorn',
         procesar: true,
-        cliente_id: cliente_id || 1,
-        user_id: user_id || null
+        cliente_id: cliente_id || 1
       }]);
 
+      // Enviar por WhatsApp
       await enviarMensajeTwilio(lead_phone, textoAI);
-      console.log(`✅ Respuesta enviada y guardada para ${lead_phone}`);
+      
+      console.log('✅ Mensaje entrante procesado exitosamente');
+      
     } catch (err) {
-      console.error(`❌ Error procesando lead ${lead_phone}:`, err.message);
+      console.error(`❌ Error procesando entrada ${lead_phone}:`, err.message);
+      
+      // Respuesta de fallback orientada a ventas
+      if (err.response?.status === 429 || err.response?.status >= 500) {
+        console.log('⚠️ Enviando respuesta de fallback orientada a ventas...');
+        const fallbackMessage = "¡Hola! Tengo exactamente lo que necesitas. Permíteme llamarte en 5 minutos para darte precios especiales que solo ofrezco por teléfono. ¿Cuál es el mejor número para contactarte?";
+        await enviarMensajeTwilio(lead_phone, fallbackMessage);
+        await supabase.from('conversations').update({ procesar: true }).eq('id', id);
+      }
     }
   }
 };
-
 
 // 🔁 Procesa mensajes salientes desde Unicorn (TAMBIÉN OPTIMIZADO)
 const procesarMensajesDesdeUnicorn = async () => {
