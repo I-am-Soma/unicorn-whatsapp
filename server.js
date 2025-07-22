@@ -255,13 +255,18 @@ app.post('/webhook', async (req, res) => {
 
 // 🔄 FUNCIÓN OPTIMIZADA PARA PROCESAR MENSAJES ENTRANTES CON VENTAS
   const responderMensajesEntrantesOptimizado = async () => {
-  const { data: mensajes, error } = await supabase
-    .from('conversations')
-    .select('*')
-    .in('origen', ['whatsapp', 'sms'])
-    .eq('procesar', true)
-    .limit(10
-
+  const { data: mensajes, error } = // Insertar respuesta
+await supabase.from('conversations').insert([{
+  lead_phone,
+  last_message: textoAI,
+  agent_name: 'Unicorn AI',
+  status: esRespuestaVentas ? 'Sales Pitch' : 'In Progress',
+  created_at: new Date().toISOString(),
+  origen: 'unicorn',
+  procesar: true,
+  cliente_id: cliente_id || 1,
+  user_id: 'cb26c538-be0b-4581-9418-aad2059674aa' // ✅ Esta línea evita que se oculten en frontend
+}]);
 
   if (error) {
     console.error('❌ Error consultando mensajes entrantes:', error.message);
