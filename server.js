@@ -11,7 +11,7 @@ const port = process.env.PORT || 8080;
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 const twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
 
-// 🔧 PARÁMETROS OPTIMIZADOS PARA VENTAS
+// 🔧 PARÁMETROS OPTIMIZADOS PARA VENTAs
 const parametrosGPTVentas = {
   model: 'gpt-3.5-turbo',
   max_tokens: 400, // Aumentado para respuestas más completas
