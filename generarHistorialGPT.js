@@ -1,11 +1,10 @@
 const generarHistorialGPT = async (leadPhone, supabase) => {
   try {
     console.log(`🔍 Generando historial para: ${leadPhone}`);
-    
+
     const baseNumero = leadPhone.replace(/^whatsapp:/, '').replace(/\D/g, '');
     console.log(`📱 Número base extraído: ${baseNumero}`);
-    
-    // Obtener cliente basado en el número
+
     const numeroConFormato = `+${baseNumero}`;
     const { data: clienteMatch, error: clienteError } = await supabase
       .from('clientes')
@@ -20,13 +19,12 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
     const cliente_id = clienteMatch?.id || 1;
     console.log(`👤 Cliente ID detectado: ${cliente_id} (${clienteMatch?.nombre || 'Cliente por defecto'})`);
 
-    // ✅ CORRECCIÓN 1: Filtro más preciso para el historial
     const { data: todos, error } = await supabase
       .from('conversations')
       .select('last_message, created_at, origen, cliente_id, lead_phone, agent_name')
-      .eq('lead_phone', leadPhone) // ✅ Buscar por teléfono exacto
+      .eq('lead_phone', leadPhone)
       .order('created_at', { ascending: true })
-      .limit(50); // ✅ Reducir límite para mejor contexto
+      .limit(50);
 
     if (error || !todos) {
       console.error('❌ Error al consultar historial:', error?.message);
@@ -35,27 +33,31 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
 
     console.log(`💬 Mensajes encontrados en historial: ${todos.length}`);
 
-    // Obtener configuración del cliente
-    const { data: cliente, error: errorCliente } = await supabase
+    let { data: cliente, error: errorCliente } = await supabase
       .from('clientes')
       .select('prompt_inicial, lista_servicios, nombre')
       .eq('id', cliente_id)
       .single();
 
-    if (errorCliente) {
-      console.error('❌ Error consultando configuración del cliente:', errorCliente.message);
+    let clienteData = cliente;
+
+    if (errorCliente || !clienteData) {
+      console.warn("⚠️ Cliente no encontrado o error. Usando configuración por defecto.");
+      clienteData = {
+        nombre: "Cliente por defecto",
+        prompt_inicial: null,
+        lista_servicios: null
+      };
     }
 
-    // Preparar datos del cliente
-    const promptBase = cliente?.prompt_inicial?.trim();
-    const servicios = cliente?.lista_servicios?.trim();
-    const nombreCliente = cliente?.nombre?.trim();
+    const promptBase = clienteData.prompt_inicial?.trim();
+    const servicios = clienteData.lista_servicios?.trim();
+    const nombreCliente = clienteData.nombre?.trim();
 
     console.log(`📝 Prompt inicial encontrado: ${promptBase ? 'SÍ' : 'NO'}`);
-    console.log(`🛍️ Servicios encontrados: ${servicios ? 'SÍ' : 'NO'}`);
+    console.log(`💍 Servicios encontrados: ${servicios ? 'SÍ' : 'NO'}`);
     console.log(`🏢 Nombre cliente: ${nombreCliente || 'No definido'}`);
 
-    // PROCESAMIENTO INTELIGENTE DE SERVICIOS
     let serviciosProcesados = [];
     if (servicios) {
       try {
@@ -85,13 +87,12 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
 
     console.log(`💰 Servicios procesados: ${serviciosProcesados.length}`);
 
-    // ✅ CORRECCIÓN 2: Separar mensajes de usuario vs bot correctamente
     const mensajesUsuario = todos.filter(m => 
       m.origen !== 'unicorn' && 
       m.agent_name !== 'Unicorn AI' && 
       m.agent_name !== 'bot'
     );
-    
+
     const mensajesBot = todos.filter(m => 
       m.origen === 'unicorn' || 
       m.agent_name === 'Unicorn AI' || 
@@ -101,7 +102,6 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
     console.log(`👤 Mensajes de usuario: ${mensajesUsuario.length}`);
     console.log(`🤖 Mensajes de bot: ${mensajesBot.length}`);
 
-    // ANALIZAR EL ÚLTIMO MENSAJE DEL USUARIO
     const ultimoMensajeUsuario = mensajesUsuario.length > 0 
       ? mensajesUsuario[mensajesUsuario.length - 1].last_message?.toLowerCase() || ''
       : '';
@@ -113,28 +113,14 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
       ultimoMensajeUsuario.includes(s.nombre.toLowerCase().substring(0, 5))
     );
 
-    console.log(`🎯 Análisis del mensaje: precio=${esPreguntaPrecio}, servicios=${esPreguntaServicios}, objeción=${esObjecion}, interés=${esInteresPorUno}`);
+    console.log(`🌟 Análisis del mensaje: precio=${esPreguntaPrecio}, servicios=${esPreguntaServicios}, objeción=${esObjecion}, interés=${esInteresPorUno}`);
 
-    // ✅ CORRECCIÓN 3: Usar prompt del cliente directamente si existe
     let promptSistema;
     if (promptBase && promptBase.length > 100) {
-      // Si el cliente ya tiene un prompt personalizado, usarlo
       promptSistema = promptBase;
       console.log('✅ Usando prompt personalizado del cliente');
     } else {
-      // Crear prompt de ventas por defecto
-      promptSistema = `Eres ${nombreCliente ? `el asistente comercial de ${nombreCliente}` : 'un experto asistente comercial'}. 
-
-🎯 TU OBJETIVO: Convertir cada conversación en una VENTA. No solo informar, sino VENDER.
-
-🔥 ESTRATEGIA DE VENTAS:
-1. CALIFICAR: Identificar necesidad específica y urgencia
-2. PRESENTAR: Servicio exacto + precio + beneficios concretos
-3. CREAR URGENCIA: Escasez, tiempo limitado, ofertas especiales
-4. MANEJAR OBJECIONES: Respuestas preparadas para "es caro", "lo pensaré", etc.
-5. CERRAR: Preguntas directas que faciliten la decisión
-
-📋 SERVICIOS DISPONIBLES:`;
+      promptSistema = `Eres ${nombreCliente ? `el asistente comercial de ${nombreCliente}` : 'un experto asistente comercial'}. \n\n🎯 TU OBJETIVO: Convertir cada conversación en una VENTA. No solo informar, sino VENDER.\n\n🔥 ESTRATEGIA DE VENTAS:\n1. CALIFICAR: Identificar necesidad específica y urgencia\n2. PRESENTAR: Servicio exacto + precio + beneficios concretos\n3. CREAR URGENCIA: Escasez, tiempo limitado, ofertas especiales\n4. MANEJAR OBJECIONES: Respuestas preparadas para \"es caro\", \"lo pensaré\", etc.\n5. CERRAR: Preguntas directas que faciliten la decisión\n\n📋 SERVICIOS DISPONIBLES:`;
 
       if (serviciosProcesados.length > 0) {
         serviciosProcesados.forEach(servicio => {
@@ -145,15 +131,9 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
         });
       }
 
-      promptSistema += `\n\n💪 REGLAS DE RESPUESTA:
-- SIEMPRE menciona precios específicos cuando pregunten por costos
-- USA urgencia: "Solo disponible esta semana", "Últimos 3 espacios"
-- HAZ preguntas que lleven al cierre: "¿Cuándo te gustaría empezar?"
-- MANEJA objeciones con valor: Si dicen "es caro" → explica beneficios
-- SÉ directo y confiado, no tímido ni genérico`;
+      promptSistema += `\n\n💪 REGLAS DE RESPUESTA:\n- SIEMPRE menciona precios específicos cuando pregunten por costos\n- USA urgencia: \"Solo disponible esta semana\", \"Últimos 3 espacios\"\n- HAZ preguntas que lleven al cierre: \"¿Cuándo te gustaría empezar?\"\n- MANEJA objeciones con valor: Si dicen \"es caro\" → explica beneficios\n- SÉ directo y confiado, no tímido ni genérico`;
     }
 
-    // ✅ CORRECCIÓN 4: Construcción limpia de mensajes
     const messages = [
       {
         role: 'system',
@@ -161,17 +141,15 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
       }
     ];
 
-    // ✅ CORRECCIÓN 5: Solo agregar historial real si existe
     if (todos.length > 0) {
-      // Tomar los últimos 10 mensajes para contexto
       const mensajesRecientes = todos.slice(-10);
-      
+
       mensajesRecientes.forEach(msg => {
         if (msg.last_message && msg.last_message.trim()) {
           const esBot = msg.origen === 'unicorn' || 
                        msg.agent_name === 'Unicorn AI' || 
                        msg.agent_name === 'bot';
-          
+
           messages.push({
             role: esBot ? 'assistant' : 'user',
             content: msg.last_message.slice(0, 300)
@@ -180,11 +158,11 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
       });
     }
 
-    console.log(`📤 Mensajes enviados a GPT: ${messages.length}`);
-    console.log(`🎯 Primer usuario: ${mensajesUsuario.length === 0 ? 'SÍ' : 'NO'}`);
-    
+    console.log(`📬 Mensajes enviados a GPT: ${messages.length}`);
+    console.log(`🌟 Primer usuario: ${mensajesUsuario.length === 0 ? 'SÍ' : 'NO'}`);
+
     return messages;
-    
+
   } catch (err) {
     console.error('❌ Error generando historial para GPT:', err.message);
     console.error('Stack trace:', err.stack);
