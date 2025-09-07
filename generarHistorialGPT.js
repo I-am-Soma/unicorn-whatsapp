@@ -17,8 +17,8 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
       console.error('❌ Error consultando cliente:', clienteError.message);
     }
 
-    const cliente_id = clienteMatch?.id || 1;
-    console.log(`👤 Cliente ID detectado: ${cliente_id} (${clienteMatch?.nombre || 'Cliente por defecto'})`);
+    const client_id = clienteMatch?.id || 1;
+    console.log(`👤 Client ID detectado: ${client_id} (${clienteMatch?.nombre || 'Cliente por defecto'})`);
 
     // Obtener historial de conversaciones
     const { data: todos, error } = await supabase
@@ -43,7 +43,7 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
     const { data: cliente, error: errorCliente } = await supabase
       .from('clientes')
       .select('prompt_inicial, lista_servicios, nombre')
-      .eq('id', cliente_id)
+      .eq('id', client_id)
       .single();
 
     if (errorCliente) {
