@@ -309,7 +309,7 @@ const responderMensajesEntrantesOptimizado = async () => {
         created_at: new Date().toISOString(),
         origen: 'unicorn',
         procesar: true,
-        cliente_id: cliente_id || 1
+        client_id: cliente_id || 1
       }]);
 
       // Enviar por WhatsApp
@@ -352,7 +352,7 @@ const procesarMensajesDesdeUnicorn = async () => {
   console.log(`🤖 Procesando ${pendientes.length} mensajes de Unicorn con OPTIMIZACIÓN`);
 
   for (const mensaje of pendientes) {
-    const { id, lead_phone, cliente_id, last_message } = mensaje;
+    const { id, lead_phone, client_id, last_message } = mensaje;
     console.log(`\n🔄 Procesando mensaje ID: ${id} para ${lead_phone}`);
     
     try {
@@ -382,7 +382,7 @@ const procesarMensajesDesdeUnicorn = async () => {
         created_at: new Date().toISOString(),
         origen: 'unicorn',
         procesar: true,
-        cliente_id: cliente_id || 1
+        client_id: cliente_id || 1
       }]);
 
       // Enviar por WhatsApp
