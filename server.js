@@ -224,7 +224,7 @@ app.post('/webhook', async (req, res) => {
       console.error('❌ Error consultando cliente:', clienteError.message);
     }
 
-    const cliente_id = clienteData?.id || 1;
+    const client_id = clienteData?.id || 1;
     console.log(`👤 Cliente detectado: ID ${cliente_id} - ${clienteData?.nombre || 'Cliente por defecto'}`);
 
     // Guardar mensaje en conversations
@@ -236,7 +236,7 @@ app.post('/webhook', async (req, res) => {
       created_at: new Date().toISOString(),
       origen: 'whatsapp',
       procesar: false,
-      cliente_id
+      client_id
     }]);
 
     if (error) {
@@ -274,7 +274,7 @@ const responderMensajesEntrantesOptimizado = async () => {
   console.log(`📨 Procesando ${mensajes.length} mensajes entrantes con OPTIMIZACIÓN DE VENTAS`);
 
   for (const mensaje of mensajes) {
-    const { id, lead_phone, cliente_id, last_message } = mensaje;
+    const { id, lead_phone, client_id, last_message } = mensaje;
     console.log(`\n📞 Procesando lead ID: ${id} de ${lead_phone}`);
     
     try {
