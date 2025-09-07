@@ -23,7 +23,7 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
     // Obtener historial de conversaciones
     const { data: todos, error } = await supabase
       .from('conversations')
-      .select('last_message, created_at, origen, cliente_id, lead_phone, agent_name')
+      .select('last_message, created_at, origen, client_id, lead_phone, agent_name')
       .order('created_at', { ascending: true })
       .limit(200);
 
