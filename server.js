@@ -225,7 +225,7 @@ app.post('/webhook', async (req, res) => {
     }
 
     const client_id = clienteData?.id || 1;
-    console.log(`👤 Cliente detectado: ID ${cliente_id} - ${clienteData?.nombre || 'Cliente por defecto'}`);
+    console.log(`👤 Cliente detectado: ID ${client_id} - ${clienteData?.nombre || 'Cliente por defecto'}`);
 
     // Guardar mensaje en conversations
     const { error } = await supabase.from('conversations').insert([{
@@ -309,7 +309,7 @@ const responderMensajesEntrantesOptimizado = async () => {
         created_at: new Date().toISOString(),
         origen: 'unicorn',
         procesar: true,
-        client_id: cliente_id || 1
+        client_id: client_id || 1
       }]);
 
       // Enviar por WhatsApp
@@ -382,7 +382,7 @@ const procesarMensajesDesdeUnicorn = async () => {
         created_at: new Date().toISOString(),
         origen: 'unicorn',
         procesar: true,
-        client_id: cliente_id || 1
+        client_id: client_id || 1
       }]);
 
       // Enviar por WhatsApp
