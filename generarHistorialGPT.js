@@ -148,6 +148,33 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
       promptSistema += `\n✨ El cliente mostró interés en un servicio específico - ENFÓCATE en ese servicio y cierra la venta.`;
     }
 
+    // 🔍 Si el mensaje del cliente no es sobre precios o servicios y no hay prompt personalizado, usar fallback de inteligencia universal
+const usarFallbackUniversal = !promptBase && !esPreguntaPrecio && !esPreguntaServicios && !esInteresPorUno;
+
+// Mensaje de inteligencia si no hay información clara del cliente
+const promptInteligenteUniversal = `
+Eres un asistente profesional, empático e inteligente. Tu misión es:
+1. Contestar la pregunta del usuario de forma clara, útil y precisa.
+2. Si aplica, conectar con los productos o servicios del cliente.
+3. Si no aplica, orientar al usuario profesionalmente sin forzar una venta.
+
+✅ SIEMPRE responde con información real y relevante.
+✅ NUNCA ignores la intención del usuario, aunque el prompt esté mal hecho.
+✅ NO repitas guiones si la situación no lo amerita.
+
+Ejemplos:
+- Si alguien pregunta "¿qué lentes me recomiendan si tengo cara redonda?" → primero responde con una recomendación profesional según el rostro, luego mencionas el producto adecuado (si hay).
+- Si el usuario solo dice "hola", puedes iniciar usando el prompt del cliente (si existe).
+- Si pregunta por dudas técnicas, responde como experto.
+
+Tu prioridad es que el usuario sienta que habla con un humano inteligente, no con un robot vendedor.
+`;
+
+// Override del promptSistema si aplica
+if (usarFallbackUniversal) {
+  promptSistema = promptInteligenteUniversal;
+}
+
     // Determinar si usar historial
     const fechaPrimerMensaje = mensajes.length > 0 ? new Date(mensajes[0].created_at) : new Date();
     const diasDesdePrimerMensaje = (Date.now() - fechaPrimerMensaje.getTime()) / (1000 * 60 * 60 * 24);
