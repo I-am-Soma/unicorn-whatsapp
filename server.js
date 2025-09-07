@@ -287,6 +287,14 @@ const responderMensajesEntrantesOptimizado = async () => {
         console.error('❌ No se pudo generar historial para GPT');
         continue;
       }
+      // ✅ Marcar como procesado para evitar reprocesamiento
+await supabase
+  .from('conversations')
+  .update({ procesar: true })
+  .eq('id', mensaje.id);
+
+console.log(`✅ Mensaje ID ${mensaje.id} marcado como procesado.`);
+
 
       console.log('🧠 Enviando a OpenAI con parámetros optimizados...');
       
