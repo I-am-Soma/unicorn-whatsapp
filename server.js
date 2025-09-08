@@ -378,7 +378,7 @@ const procesarMensajesDesdeUnicorn = async () => {
       const textoAI = await generarRespuestaVentas(messages, intencion);
       console.log(`🎯 Respuesta de AI: ${textoAI.substring(0, 100)}...`);
 
-     const responderMensajesEntrantesOptimizado = async () => {
+  const responderMensajesEntrantesOptimizado = async () => {
   const { data: mensajes, error } = await supabase
     .from('conversations')
     .select('*')
@@ -439,7 +439,7 @@ const procesarMensajesDesdeUnicorn = async () => {
       // Enviar por WhatsApp
       await enviarMensajeTwilio(lead_phone, textoAI);
 
-      // 🔥 MOVER AQUÍ: Marcar como procesado SOLO DESPUÉS de enviar exitosamente
+      // 🔥 Marcar como procesado SOLO DESPUÉS de enviar exitosamente
       await supabase.from('conversations').update({ procesar: true }).eq('id', id);
       console.log(`✅ Mensaje ID ${id} marcado como procesado después de envío exitoso`);
       
@@ -458,7 +458,7 @@ const procesarMensajesDesdeUnicorn = async () => {
       await supabase.from('conversations').update({ procesar: true }).eq('id', id);
     }
   }
-};      
+};    
       // Insertar respuesta
       await supabase.from('conversations').insert([{
         lead_phone,
