@@ -14,7 +14,7 @@ const twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKE
 // 🔧 PARÁMETROS OPTIMIZADOS PARA VENTAS
 const parametrosGPTVentas = {
   model: 'gpt-3.5-turbo',
-  max_tokens: 400, // Aumentado para respuestas más completas
+  max_tokens: 300, // Aumentado para respuestas más completas
   temperature: 0.8, // Más creatividad para ventas persuasivas
   presence_penalty: 0.7, // Evita repetición
   frequency_penalty: 0.4, // Variedad en respuestas
