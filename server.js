@@ -378,9 +378,87 @@ const procesarMensajesDesdeUnicorn = async () => {
       const textoAI = await generarRespuestaVentas(messages, intencion);
       console.log(`🎯 Respuesta de AI: ${textoAI.substring(0, 100)}...`);
 
-      // Marcar como procesado
-      await supabase.from('conversations').update({ procesar: true }).eq('id', id);
+     const responderMensajesEntrantesOptimizado = async () => {
+  const { data: mensajes, error } = await supabase
+    .from('conversations')
+    .select('*')
+    .in('origen', ['whatsapp', 'sms'])
+    .eq('procesar', false)
+    .limit(10);
+
+  if (error) {
+    console.error('❌ Error consultando mensajes entrantes:', error.message);
+    return;
+  }
+
+  if (!mensajes?.length) {
+    console.log('⏳ No hay nuevos leads...');
+    return;
+  }
+
+  console.log(`📨 Procesando ${mensajes.length} mensajes entrantes con OPTIMIZACIÓN DE VENTAS`);
+
+  for (const mensaje of mensajes) {
+    const { id, lead_phone, client_id, last_message } = mensaje;
+    console.log(`\n📞 Procesando lead ID: ${id} de ${lead_phone}`);
+    
+    try {
+      // Detectar intención del mensaje
+      const intencion = detectarIntencionVenta(last_message || '');
+      console.log(`🎯 Intención detectada:`, Object.keys(intencion).filter(k => intencion[k]).join(', ') || 'general');
+
+      const messages = await generarHistorialGPT(lead_phone, supabase);
+      if (!messages) {
+        console.error('❌ No se pudo generar historial para GPT');
+        // Marcar como procesado solo si falla la generación de historial
+        await supabase.from('conversations').update({ procesar: true }).eq('id', id);
+        continue;
+      }
+
+      console.log('🧠 Enviando a OpenAI con parámetros optimizados...');
       
+      const textoAI = await generarRespuestaVentas(messages, intencion);
+      console.log(`🎯 Respuesta de AI optimizada: ${textoAI.substring(0, 100)}...`);
+
+      // Validar que la respuesta sea orientada a ventas
+      const esRespuestaVentas = /\$|\d+|precio|costo|oferta|disponible|cuando|cita|reservar|llamar/i.test(textoAI);
+      console.log(`💰 Respuesta orientada a ventas: ${esRespuestaVentas ? 'SÍ' : 'NO'}`);
+
+      // Insertar respuesta
+      await supabase.from('conversations').insert([{
+        lead_phone,
+        last_message: textoAI,
+        agent_name: 'Unicorn AI',
+        status: esRespuestaVentas ? 'Sales Pitch' : 'In Progress',
+        created_at: new Date().toISOString(),
+        origen: 'unicorn',
+        procesar: true,
+        client_id: client_id || 1
+      }]);
+
+      // Enviar por WhatsApp
+      await enviarMensajeTwilio(lead_phone, textoAI);
+
+      // 🔥 MOVER AQUÍ: Marcar como procesado SOLO DESPUÉS de enviar exitosamente
+      await supabase.from('conversations').update({ procesar: true }).eq('id', id);
+      console.log(`✅ Mensaje ID ${id} marcado como procesado después de envío exitoso`);
+      
+      console.log('✅ Mensaje entrante procesado exitosamente');
+      
+    } catch (err) {
+      console.error(`❌ Error procesando entrada ${lead_phone}:`, err.message);
+      
+      // Respuesta de fallback orientada a ventas
+      if (err.response?.status === 429 || err.response?.status >= 500) {
+        console.log('⚠️ Enviando respuesta de fallback orientada a ventas...');
+        const fallbackMessage = "¡Hola! Tengo exactamente lo que necesitas. Permíteme llamarte en 5 minutos para darte precios especiales que solo ofrezco por teléfono. ¿Cuál es el mejor número para contactarte?";
+        await enviarMensajeTwilio(lead_phone, fallbackMessage);
+      }
+      // Marcar como procesado incluso si falla, para evitar bucles infinitos
+      await supabase.from('conversations').update({ procesar: true }).eq('id', id);
+    }
+  }
+};      
       // Insertar respuesta
       await supabase.from('conversations').insert([{
         lead_phone,
