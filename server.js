@@ -717,9 +717,9 @@ app.get('/stats-ventas', async (req, res) => {
 });
 
 if (process.env.POLLING_ACTIVO === 'true') {
-  console.log('🔁 Polling activo cada 30s para evitar overlaps');
-  setInterval(procesarMensajesDesdeUnicorn, 30000);
-  setInterval(responderMensajesEntrantesOptimizado, 30000);
+  console.log('🔁 Polling activo cada 10s para evitar overlaps');
+  setInterval(procesarMensajesDesdeUnicorn, 10000);
+  setInterval(responderMensajesEntrantesOptimizado, 10000);
 } else {
   console.log('⏸️ Polling desactivado (.env)');
 }
