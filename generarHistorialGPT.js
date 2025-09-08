@@ -1,10 +1,10 @@
 const generarHistorialGPT = async (leadPhone, supabase) => {
   try {
     console.log(`🔍 Generando historial para: ${leadPhone}`);
-    
+
     const baseNumero = leadPhone.replace(/^whatsapp:/, '').replace(/\D/g, '');
     console.log(`📱 Número base extraído: ${baseNumero}`);
-    
+
     const numeroConFormato = `+${baseNumero}`;
     const { data: clienteMatch, error: clienteError } = await supabase
       .from('clientes')
@@ -50,10 +50,6 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
     const servicios = cliente?.lista_servicios?.trim();
     const nombreCliente = cliente?.nombre?.trim();
 
-    console.log(`📝 Prompt inicial encontrado: ${promptBase ? 'SÍ' : 'NO'}`);
-    console.log(`🛍️ Servicios encontrados: ${servicios ? 'SÍ' : 'NO'}`);
-    console.log(`🏢 Nombre cliente: ${nombreCliente || 'No definido'}`);
-
     let serviciosProcesados = [];
     if (servicios) {
       try {
@@ -81,8 +77,6 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
       }
     }
 
-    console.log(`💰 Servicios procesados: ${serviciosProcesados.length}`);
-
     const ultimoMensajeUsuario = mensajes
       .filter(m => m.origen !== 'unicorn' && m.agent_name !== 'Unicorn AI')
       .pop()?.last_message?.toLowerCase() || '';
@@ -90,57 +84,43 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
     const esPreguntaPrecio = /cuanto|cuesta|precio|cost|dollar|peso|barato|caro|vale/.test(ultimoMensajeUsuario);
     const esPreguntaServicios = /servicio|que hac|ofrec|tratamiento|procedimiento/.test(ultimoMensajeUsuario);
     const esObjecion = /caro|expensive|mucho|pensarlo|despues|luego|maybe/.test(ultimoMensajeUsuario);
-    const esInteresPorUno = serviciosProcesados.some(s => 
+    const esInteresPorUno = serviciosProcesados.some(s =>
       ultimoMensajeUsuario.includes(s.nombre.toLowerCase().substring(0, 5))
     );
 
-    console.log(`🎯 Análisis del mensaje: precio=\${esPreguntaPrecio}, servicios=\${esPreguntaServicios}, objeción=\${esObjecion}, interés=\${esInteresPorUno}`);
+    let promptSistema = nombreCliente
+      ? `Eres el asistente comercial de ${nombreCliente}.`
+      : `Eres un asistente comercial inteligente.`;
 
-    const usarFallbackUniversal = !promptBase;
+    promptSistema += `
 
-    const promptInteligenteUniversal = \`
-Eres un asistente profesional, empático e inteligente. Tu misión es:
-1. Contestar la pregunta del usuario de forma clara, útil y precisa.
-2. Si aplica, conectar con los productos o servicios del cliente.
-3. Si no aplica, orientar al usuario profesionalmente sin forzar una venta.
+Tu misión es brindar información útil, responder preguntas con claridad, e impulsar el interés del usuario en los productos o servicios que se ofrecen. No fuerces ventas si la intención del usuario es informativa.
 
-✅ SIEMPRE responde con información real y relevante.
-✅ NUNCA ignores la intención del usuario, aunque el prompt esté mal hecho.
-✅ NO repitas guiones si la situación no lo amerita.
+Si el usuario pregunta algo general o fuera de contexto (como sobre política o salud), responde con inteligencia y respeto, sin desviar el tema a ventas si no corresponde.
 
-Ejemplos:
-- Si alguien pregunta "¿qué lentes me recomiendan si tengo cara redonda?" → primero responde con una recomendación profesional según el rostro, luego mencionas el producto adecuado (si hay).
-- Si el usuario solo dice "hola", puedes iniciar usando el prompt del cliente (si existe).
-- Si pregunta por dudas técnicas, responde como experto.
+Dispones de los siguientes servicios:
+`;
 
-Tu prioridad es que el usuario sienta que habla con un humano inteligente, no con un robot vendedor.
-\`;
-
-    let promptSistema = promptInteligenteUniversal;
-    if (!usarFallbackUniversal && promptBase) {
-      promptSistema = promptBase;
-    }
+    serviciosProcesados.forEach(servicio => {
+      promptSistema += `• ${servicio.nombre}`;
+      if (servicio.precio) {
+        promptSistema += ` - $${servicio.precio}`;
+      }
+      promptSistema += `\n`;
+    });
 
     const fechaPrimerMensaje = mensajes.length > 0 ? new Date(mensajes[0].created_at) : new Date();
     const diasDesdePrimerMensaje = (Date.now() - fechaPrimerMensaje.getTime()) / (1000 * 60 * 60 * 24);
     const usarHistorial = diasDesdePrimerMensaje <= 3;
-    
-    console.log(\`📅 Días desde primer mensaje: \${diasDesdePrimerMensaje.toFixed(1)}\`);
-    console.log(\`🔄 Usar historial: \${usarHistorial}\`);
 
-    const hayMensajesUsuario = mensajes.some(m => 
-      m.origen !== 'unicorn' && 
-      m.agent_name !== 'Unicorn AI' && 
+    const hayMensajesUsuario = mensajes.some(m =>
+      m.origen !== 'unicorn' &&
+      m.agent_name !== 'Unicorn AI' &&
       m.agent_name !== 'bot'
     );
 
-    console.log(\`👤 Hay mensajes del usuario: \${hayMensajesUsuario}\`);
-
     const messages = [
-      {
-        role: 'system',
-        content: promptSistema
-      }
+      { role: 'system', content: promptSistema }
     ];
 
     const yaSaludoUnicorn = mensajes.some(m =>
@@ -153,19 +133,17 @@ Tu prioridad es que el usuario sienta que habla con un humano inteligente, no co
     if (!yaSaludoUnicorn && promptBase) {
       messages.push({
         role: 'assistant',
-        content: promptBase
+        content: `¡Hola! 👋 ${promptBase}`
       });
     }
 
     if (hayMensajesUsuario && usarHistorial) {
       const mensajesRecientes = mensajes.slice(-8);
-      
       mensajesRecientes.forEach(msg => {
         if (msg.last_message && msg.last_message.trim()) {
-          const esBot = msg.origen === 'unicorn' || 
-                       msg.agent_name === 'Unicorn AI' || 
-                       msg.agent_name === 'bot';
-          
+          const esBot = msg.origen === 'unicorn' ||
+                        msg.agent_name === 'Unicorn AI' ||
+                        msg.agent_name === 'bot';
           messages.push({
             role: esBot ? 'assistant' : 'user',
             content: msg.last_message.slice(0, 300)
@@ -174,10 +152,7 @@ Tu prioridad es que el usuario sienta que habla con un humano inteligente, no co
       });
     }
 
-    console.log(\`📤 Mensajes enviados a GPT: \${messages.length}\`);
-    
     return messages;
-    
   } catch (err) {
     console.error('❌ Error generando historial para GPT:', err.message);
     console.error('Stack trace:', err.stack);
