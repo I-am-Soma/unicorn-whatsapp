@@ -1,4 +1,3 @@
-
 const generarHistorialGPT = async (leadPhone, supabase) => {
   try {
     console.log(`🔍 Generando historial para: ${leadPhone}`);
@@ -101,7 +100,7 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
     let promptSistema = "";
 
     if (esPreguntaGobierno) {
-      promptSistema = \`
+      promptSistema = `
 Eres un asistente informativo oficial del Gobierno del Estado de Chihuahua.
 
 Tu objetivo es informar clara, breve y positivamente sobre las acciones de la Gobernadora María Eugenia Campos Galván. Menciona logros clave, programas sociales, obras importantes y avances en temas como seguridad, salud, educación y desarrollo económico. Si no hay un detalle disponible, responde con cortesía y ofrece una fuente de contacto.
