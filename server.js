@@ -26,27 +26,36 @@ const generarPromptVentasPersonalizado = (cliente, servicios = []) => {
   const nombreEmpresa = cliente.nombre || 'nuestra empresa';
   const industria = detectarIndustria(cliente.nombre, servicios);
   
-  let prompt = `Eres el especialista comercial principal de ${nombreEmpresa}, experto en ${industria}.
+  let prompt = `Eres el especialista principal de ${nombreEmpresa}, experto en ${industria}.`;
 
-🎯 TU MISIÓN: Convertir CADA conversación en una VENTA confirmada. No solo informar, sino CERRAR VENTAS.
-
-🔥 ESTRATEGIA DE VENTAS AGRESIVA:
+  // Adaptar misión según industria
+  if (industria.includes('promoción política')) {
+    prompt += `\n\n🎯 TU MISIÓN: Promover las acciones y causas de ${nombreEmpresa} desde el primer mensaje. Convierte cada conversación en apoyo activo: invita a unirse, compartir o participar en iniciativas.`;
+    prompt += `\n\n🔥 ESTRATEGIA DE PROMOCIÓN AGRESIVA:
+1. PERSONALIZA INMEDIATAMENTE: Menciona acciones clave del cliente (e.g., "Apoya nuestra campaña por [causa]").
+2. CREA URGENCIA: "Únete ahora antes de que sea tarde" o "Comparte esto hoy".
+3. MANEJA OBJECIONES: Con beneficios sociales o impacto real.
+4. CIERRA CON ACCIÓN: "¿Te unes a la marcha del sábado?" o "¿Compartes en tus redes?".`;
+  } else {
+    // Estrategia de ventas original para otros casos
+    prompt += `\n\n🎯 TU MISIÓN: Convertir CADA conversación en una VENTA confirmada. No solo informar, sino CERRAR VENTAS.
+\n\n🔥 ESTRATEGIA DE VENTAS AGRESIVA:
 1. CALIFICAR INMEDIATAMENTE: "¿Para cuándo necesitas esto?" "¿Cuál es tu presupuesto aproximado?"
 2. PRESENTAR CON URGENCIA: Servicio específico + precio exacto + "Solo disponible esta semana"
 3. CREAR ESCASEZ: "Últimos 3 espacios", "Oferta por tiempo limitado", "Solo para los primeros 5 clientes"
 4. MANEJAR OBJECIONES: Precio alto → beneficios concretos + facilidades de pago
-5. CERRAR AGRESIVAMENTE: "¿Empezamos mañana o prefieres el jueves?" "¿Efectivo o tarjeta?"
+5. CERRAR AGRESIVAMENTE: "¿Empezamos mañana o prefieres el jueves?" "¿Efectivo o tarjeta?"`;
+  }
 
-💰 NUESTROS SERVICIOS PREMIUM:`;
-
-  // Agregar servicios con formato de ventas agresivo
+  // Agregar servicios (adaptado)
+  prompt += `\n\n💰 NUESTROS SERVICIOS/ACTIVIDADES PREMIUM:`;
   if (servicios && servicios.length > 0) {
     servicios.forEach((servicio, index) => {
       const nombre = servicio.nombre || servicio.name || `Servicio ${index + 1}`;
       const precio = servicio.precio || servicio.price || null;
       
       prompt += `\n🔥 ${nombre}`;
-      if (precio) {
+      if (precio && !industria.includes('promoción política')) {  // Solo precios en ventas
         prompt += ` - $${precio} (OFERTA ESPECIAL ESTA SEMANA)`;
       }
       if (servicio.descripcion) {
@@ -54,7 +63,7 @@ const generarPromptVentasPersonalizado = (cliente, servicios = []) => {
       }
     });
   } else {
-    prompt += `\n🔥 Consulta nuestros servicios premium con descuentos especiales`;
+    prompt += `\n🔥 Consulta nuestras acciones/servicios premium con oportunidades especiales`;
   }
 
   prompt += `\n\n💪 REGLAS ESTRICTAS DE RESPUESTA:
@@ -91,6 +100,11 @@ const detectarIndustria = (nombre = '', servicios = []) => {
   ).join(' ').toLowerCase();
   
   const todasPalabras = `${nombreLower} ${serviciosTexto}`;
+  
+  // Nueva categoría para política/promoción
+  if (/politico|campaña|gobierno|elecciones|promocion|acciones|social|publico/.test(todasPalabras)) {
+    return 'promoción política y social';
+  }
   
   // Detectar industria por palabras clave
   if (/belleza|estetica|spa|salon|facial|masaje|tratamiento|piel/.test(todasPalabras)) {
@@ -134,7 +148,7 @@ const detectarIntencionVenta = (mensaje) => {
 };
 
 // 🎯 FUNCIÓN OPTIMIZADA PARA RESPUESTAS DE VENTAS
-const generarRespuestaVentas = async (messages, intencion) => {
+const generarRespuestaVentas = async (messages, intencion, client_id) => {
   try {
     // Parámetros dinámicos según intención
     let parametros = { ...parametrosGPTVentas };
@@ -160,6 +174,15 @@ const generarRespuestaVentas = async (messages, intencion) => {
       intencion: Object.keys(intencion).filter(k => intencion[k]).join(', ')
     });
 
+    // Si es mensaje inicial (historial vacío o solo saludo), fuerza modo proactivo
+    if (messages.length <= 1 || intencion.saludo || !intencion) {
+      console.log('🛡️ Detectado mensaje inicial: Forzando modo proactivo de promoción/ventas');
+      // Agrega un system message inicial si no existe
+      if (!messages.some(m => m.role === 'system')) {
+        messages.unshift({ role: 'system', content: 'Inicia la conversación promoviendo/vendiendo de inmediato.' });
+      }
+    }
+
     const aiResponse = await axios.post(
       'https://api.openai.com/v1/chat/completions',
       { ...parametros, messages },
@@ -175,7 +198,10 @@ const generarRespuestaVentas = async (messages, intencion) => {
     
   } catch (error) {
     console.error('❌ Error en OpenAI:', error.message);
-    throw error;
+    // En fallback, personaliza consultando cliente
+    const { data: cliente } = await supabase.from('clientes').select('nombre, prompt_inicial').eq('id', client_id || 1).single();
+    const fallbackMessage = `${cliente?.nombre ? `¡Hola de ${cliente.nombre}! ` : ''}Descubre nuestras acciones/ofertas especiales. ¿Para cuándo las necesitas?`;
+    return fallbackMessage;
   }
 };
 
@@ -252,7 +278,7 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// 🔄 FUNCIÓN OPTIMIZADA PARA PROCESAR MENSAJES ENTRANTES CON VENTAS (CORREGIDA)
+// 🔄 FUNCIÓN OPTIMIZADA PARA PROCESAR MENSAJES ENTRANTES CON VENTAS
 let isProcessingEntrantes = false; // Bloqueo para evitar overlaps
 const responderMensajesEntrantesOptimizado = async () => {
   if (isProcessingEntrantes) {
@@ -299,7 +325,7 @@ const responderMensajesEntrantesOptimizado = async () => {
 
         console.log('🧠 Enviando a OpenAI con parámetros optimizados...');
         
-        const textoAI = await generarRespuestaVentas(messages, intencion);
+        const textoAI = await generarRespuestaVentas(messages, intencion, client_id);
         console.log(`🎯 Respuesta de AI optimizada: ${textoAI.substring(0, 100)}...`);
 
         // Validar que la respuesta sea orientada a ventas
@@ -345,7 +371,7 @@ const responderMensajesEntrantesOptimizado = async () => {
   }
 };
 
-// 🔁 Procesa mensajes salientes desde Unicorn (TAMBIÉN OPTIMIZADO, CORREGIDO SIN DUPLICADO)
+// 🔁 Procesa mensajes salientes desde Unicorn (TAMBIÉN OPTIMIZADO)
 let isProcessingUnicorn = false; // Bloqueo para evitar overlaps
 const procesarMensajesDesdeUnicorn = async () => {
   if (isProcessingUnicorn) {
@@ -383,14 +409,13 @@ const procesarMensajesDesdeUnicorn = async () => {
         const messages = await generarHistorialGPT(lead_phone, supabase);
         if (!messages) {
           console.error('❌ No se pudo generar historial para GPT');
-          // Marcar como procesado solo si falla
           await supabase.from('conversations').update({ procesar: true }).eq('id', id);
           continue;
         }
 
         console.log('🧠 Enviando a OpenAI con parámetros optimizados...');
         
-        const textoAI = await generarRespuestaVentas(messages, intencion);
+        const textoAI = await generarRespuestaVentas(messages, intencion, client_id);
         console.log(`🎯 Respuesta de AI: ${textoAI.substring(0, 100)}...`);
 
         // Insertar respuesta
@@ -416,7 +441,6 @@ const procesarMensajesDesdeUnicorn = async () => {
         
       } catch (err) {
         console.error(`❌ Error procesando unicorn ${lead_phone}:`, err.message);
-        // Marcar como procesado en error para evitar bucles
         await supabase.from('conversations').update({ procesar: true }).eq('id', id);
       }
     }
@@ -715,11 +739,10 @@ app.get('/stats-ventas', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
 if (process.env.POLLING_ACTIVO === 'true') {
-  console.log('🔁 Polling activo cada 10s para evitar overlaps');
-  setInterval(procesarMensajesDesdeUnicorn, 10000);
-  setInterval(responderMensajesEntrantesOptimizado, 10000);
+  console.log('🔁 Polling activo cada 30s para evitar overlaps');
+  setInterval(procesarMensajesDesdeUnicorn, 30000);
+  setInterval(responderMensajesEntrantesOptimizado, 30000);
 } else {
   console.log('⏸️ Polling desactivado (.env)');
 }
