@@ -1,10 +1,10 @@
 const generarHistorialGPT = async (leadPhone, supabase) => {
   try {
     console.log(`🔍 Generando historial para: ${leadPhone}`);
-    
+
     const baseNumero = leadPhone.replace(/^whatsapp:/, '').replace(/\D/g, '');
     console.log(`📱 Número base extraído: ${baseNumero}`);
-    
+
     const numeroConFormato = `+${baseNumero}`;
     const { data: clienteMatch, error: clienteError } = await supabase
       .from('clientes')
@@ -81,8 +81,6 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
       }
     }
 
-    console.log(`💰 Servicios procesados: ${serviciosProcesados.length}`);
-
     const ultimoMensajeUsuario = mensajes
       .filter(m => m.origen !== 'unicorn' && m.agent_name !== 'Unicorn AI')
       .pop()?.last_message?.toLowerCase() || '';
@@ -93,68 +91,55 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
     const esInteresPorUno = serviciosProcesados.some(s => 
       ultimoMensajeUsuario.includes(s.nombre.toLowerCase().substring(0, 5))
     );
-    const esPreguntaGobierno = /maru campos|gobernadora|gobierno|acciones|programas|estado|chihuahua|politic[ao]|obras|campan[ãa]/.test(ultimoMensajeUsuario);
 
-    console.log(`🎯 Análisis del mensaje: precio=${esPreguntaPrecio}, servicios=${esPreguntaServicios}, objeción=${esObjecion}, interés=${esInteresPorUno}, gobierno=${esPreguntaGobierno}`);
+    console.log(`🎯 Análisis del mensaje: precio=${esPreguntaPrecio}, servicios=${esPreguntaServicios}, objeción=${esObjecion}, interés=${esInteresPorUno}`);
 
-    let promptSistema = "";
+    const usarFallbackUniversal = !promptBase && !esPreguntaPrecio && !esPreguntaServicios && !esInteresPorUno;
 
-    if (esPreguntaGobierno) {
-      promptSistema = `
-Eres un asistente informativo oficial del Gobierno del Estado de Chihuahua.
+    let promptSistema = usarFallbackUniversal
+      ? \`
+Eres un asistente profesional, empático e inteligente. Tu misión es:
+1. Contestar la pregunta del usuario de forma clara, útil y precisa.
+2. Si aplica, conectar con los productos o servicios del cliente.
+3. Si no aplica, orientar al usuario profesionalmente sin forzar una venta.
 
-Tu objetivo es informar clara, breve y positivamente sobre las acciones de la Gobernadora María Eugenia Campos Galván. Menciona logros clave, programas sociales, obras importantes y avances en temas como seguridad, salud, educación y desarrollo económico. Si no hay un detalle disponible, responde con cortesía y ofrece una fuente de contacto.
+✅ SIEMPRE responde con información real y relevante.
+✅ NUNCA ignores la intención del usuario, aunque el prompt esté mal hecho.
+✅ NO repitas guiones si la situación no lo amerita.
 
-🎯 Reglas:
-- Responde con tono institucional y cercano.
-- No exageres ni repitas slogans.
-- Si aplica, invita al usuario a conocer más en el sitio oficial o redes sociales.
-\`;
-    } else {
-      promptSistema = `Eres ${nombreCliente ? \`el asistente comercial de \${nombreCliente}\` : 'un experto asistente comercial'}. 
+Ejemplos:
+- Si alguien pregunta "¿qué lentes me recomiendan si tengo cara redonda?" → primero responde con una recomendación profesional según el rostro, luego mencionas el producto adecuado (si hay).
+- Si el usuario solo dice "hola", puedes iniciar usando el prompt del cliente (si existe).
+- Si pregunta por dudas técnicas, responde como experto.
 
-🎯 TU OBJETIVO: Convertir cada conversación en una VENTA. No solo informar, sino VENDER.
+Tu prioridad es que el usuario sienta que habla con un humano inteligente, no con un robot vendedor.
+\`
+      : \`Eres el asistente comercial de \${nombreCliente || 'nuestro negocio'}.
+
+🎯 TU OBJETIVO: Convertir cada conversación en una VENTA.
 
 🔥 ESTRATEGIA DE VENTAS:
 1. CALIFICAR: Identificar necesidad específica y urgencia
 2. PRESENTAR: Servicio exacto + precio + beneficios concretos
-3. CREAR URGENCIA: Escasez, tiempo limitado, ofertas especiales
-4. MANEJAR OBJECIONES: Respuestas preparadas para "es caro", "lo pensaré", etc.
-5. CERRAR: Preguntas directas que faciliten la decisión
+3. CREAR URGENCIA
+4. MANEJAR OBJECIONES
+5. CERRAR
 
-📋 SERVICIOS DISPONIBLES:`;
+📋 SERVICIOS DISPONIBLES:\${
+  serviciosProcesados.map(s => `\n• \${s.nombre}${s.precio ? ' - $' + s.precio : ''}`).join('')
+}
 
-      serviciosProcesados.forEach(servicio => {
-        promptSistema += `\n• \${servicio.nombre}`;
-        if (servicio.precio) {
-          promptSistema += ` - $\${servicio.precio}`;
-        }
-      });
-
-      promptSistema += `\n\n💪 REGLAS DE RESPUESTA:
-- SIEMPRE menciona precios específicos cuando pregunten por costos
-- USA urgencia: "Solo disponible esta semana", "Últimos 3 espacios", "Oferta por tiempo limitado"
-- HAZ preguntas que lleven al cierre: "¿Cuándo te gustaría empezar?", "¿Prefieres la cita mañana o el jueves?"
-- MANEJA objeciones con valor: Si dicen "es caro" → explica beneficios, ofrece facilidades de pago
-- SÉ directo y confiado, no tímido ni genérico`;
-
-      if (esPreguntaPrecio) {
-        promptSistema += `\n🎯 El cliente está preguntando por PRECIOS - Da precios específicos + beneficios + urgencia.`;
-      }
-      if (esObjecion) {
-        promptSistema += `\n⚠️ El cliente tiene una OBJECIÓN - Manéjala con beneficios y facilidades de pago.`;
-      }
-      if (esInteresPorUno) {
-        promptSistema += `\n✨ El cliente mostró interés en un servicio específico - ENFÓCATE en ese servicio y cierra la venta.`;
-      }
-    }
+🚀 CONTEXTO DE LA CONVERSACIÓN ACTUAL:\${
+  esPreguntaPrecio ? '\n🎯 El cliente pregunta por precios.' : ''
+}\${
+  esObjecion ? '\n⚠️ El cliente tiene una objeción.' : ''
+}\${
+  esInteresPorUno ? '\n✨ Interés en un servicio específico.' : ''
+}\`;
 
     const fechaPrimerMensaje = mensajes.length > 0 ? new Date(mensajes[0].created_at) : new Date();
     const diasDesdePrimerMensaje = (Date.now() - fechaPrimerMensaje.getTime()) / (1000 * 60 * 60 * 24);
     const usarHistorial = diasDesdePrimerMensaje <= 3;
-    
-    console.log(`📅 Días desde primer mensaje: \${diasDesdePrimerMensaje.toFixed(1)}`);
-    console.log(`🔄 Usar historial: \${usarHistorial}`);
 
     const hayMensajesUsuario = mensajes.some(m => 
       m.origen !== 'unicorn' && 
@@ -171,38 +156,21 @@ Tu objetivo es informar clara, breve y positivamente sobre las acciones de la Go
       m.last_message.trim().length > 10
     );
 
-    if (!yaSaludoUnicorn && !esPreguntaGobierno) {
-      let mensajeBienvenida = `¡Hola! 👋`;
-      if (promptBase) mensajeBienvenida += ` \${promptBase}`;
+    if (!yaSaludoUnicorn) {
+      let mensajeBienvenida = \`¡Hola! 👋\${promptBase ? ' ' + promptBase : ''}\`;
 
       if (serviciosProcesados.length > 0) {
         const servicioDestacado = serviciosProcesados[0];
-        mensajeBienvenida += ` 🔥 OFERTA ESPECIAL: \${servicioDestacado.nombre}`;
-        if (servicioDestacado.precio) {
-          mensajeBienvenida += ` por solo $\${servicioDestacado.precio}`;
-        }
-        mensajeBienvenida += `\n\n✨ ¿Cuál te interesa más?`;
-
-        serviciosProcesados.slice(0, 3).forEach((s, i) => {
-          mensajeBienvenida += `\n\${i + 1}. \${s.nombre}`;
-          if (s.precio) mensajeBienvenida += ` - $\${s.precio}`;
-        });
-
-        mensajeBienvenida += `\n\n📞 ¿Cuándo te gustaría empezar? Solo quedan 3 espacios disponibles esta semana.`;
-      } else {
-        mensajeBienvenida += ` ¿En qué puedo ayudarte hoy?`;
+        mensajeBienvenida += \` 🔥 OFERTA ESPECIAL: \${servicioDestacado.nombre}\${servicioDestacado.precio ? ' por solo $' + servicioDestacado.precio : ''}.\`;
       }
 
       messages.push({ role: 'assistant', content: mensajeBienvenida });
     }
 
     if (hayMensajesUsuario && usarHistorial) {
-      const mensajesRecientes = mensajes.slice(-8);
-      mensajesRecientes.forEach(msg => {
+      mensajes.slice(-8).forEach(msg => {
         if (msg.last_message?.trim()) {
-          const esBot = msg.origen === 'unicorn' || 
-                        msg.agent_name === 'Unicorn AI' || 
-                        msg.agent_name === 'bot';
+          const esBot = msg.origen === 'unicorn' || msg.agent_name === 'Unicorn AI' || msg.agent_name === 'bot';
           messages.push({
             role: esBot ? 'assistant' : 'user',
             content: msg.last_message.slice(0, 300)
@@ -213,10 +181,9 @@ Tu objetivo es informar clara, breve y positivamente sobre las acciones de la Go
 
     console.log(`📤 Mensajes enviados a GPT: \${messages.length}`);
     return messages;
-    
+
   } catch (err) {
     console.error('❌ Error generando historial para GPT:', err.message);
-    console.error('Stack trace:', err.stack);
     return null;
   }
 };
