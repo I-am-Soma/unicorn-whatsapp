@@ -1,4 +1,4 @@
-const generarHistorialGPT = async (leadPhone, supabase) => {
+const generarHistorialGPT(conversation, supabase) => {
   try {
     console.log(`🔍 Generando historial para: ${leadPhone}`);
 
