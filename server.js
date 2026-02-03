@@ -403,10 +403,25 @@ const procesarMensajesDesdeUnicorn = async () => {
     console.log(`🤖 Procesando ${pendientes.length} mensajes de Unicorn con OPTIMIZACIÓN`);
 
     for (const mensaje of pendientes) {
-      const { id, lead_phone, client_id, last_message } = mensaje;
-      console.log(`\n🔄 Procesando mensaje ID: ${id} para ${lead_phone}`);
-      
-      try {
+  const { id, lead_phone, client_id, last_message } = mensaje;
+
+  const messages = await generarHistorialGPT(
+    lead_phone,
+    supabase,
+    client_id
+  );
+
+  if (!messages) {
+    console.error('❌ No se pudo generar historial para GPT');
+    await supabase
+      .from('conversations')
+      .update({ procesar: true })
+      .eq('id', id);
+    continue;
+  }
+
+}
+
         // Detectar intención
         const intencion = detectarIntencionVenta(last_message || '');
         
