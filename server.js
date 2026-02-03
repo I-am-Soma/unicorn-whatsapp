@@ -315,7 +315,11 @@ const responderMensajesEntrantesOptimizado = async () => {
         const intencion = detectarIntencionVenta(last_message || '');
         console.log(`🎯 Intención detectada:`, Object.keys(intencion).filter(k => intencion[k]).join(', ') || 'general');
 
-        const messages = await generarHistorialGPT(lead_phone, supabase);
+        const messages = await generarHistorialGPT(
+  lead_phone,
+  supabase,
+  client_id
+);
         if (!messages) {
           console.error('❌ No se pudo generar historial para GPT');
           // Marcar como procesado solo si falla la generación de historial
