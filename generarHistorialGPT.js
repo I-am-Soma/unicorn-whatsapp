@@ -11,7 +11,66 @@ const generarHistorialGPT = async (leadPhone, supabase) => {
     const { data: clienteMatch, error: clienteError } = await supabase
       .from('clientes')
       .select('id, prompt_inicial, lista_servicios, nombre, numero_whatsapp')
-      .eq('numero_whatsapp', numeroConFormato)
+      const generarHistorialGPT = async (leadPhone, supabase, client_id) => {
+  try {
+    console.log(`🔍 Generando historial para: ${leadPhone}`);
+    console.log(`👤 Client ID recibido: ${client_id}`);
+
+    if (!client_id) {
+      console.error('❌ Conversation sin client_id, abortando');
+      return null;
+    }
+
+    const baseNumero = leadPhone.replace(/^whatsapp:/, '').replace(/\D/g, '');
+
+    // 🔥 CLIENTE SIEMPRE POR ID
+    const { data: clienteMatch, error: clienteError } = await supabase
+      .from('clientes')
+      .select('id, prompt_inicial, lista_servicios, nombre')
+      .eq('id', client_id)
+      .single();
+
+    if (clienteError || !clienteMatch) {
+      console.error('❌ No se encontró cliente por client_id:', client_id);
+      return null;
+    }
+
+    // Historial SOLO por client_id
+    const { data: todos, error } = await supabase
+      .from('conversations')
+      .select('last_message, created_at, origen, lead_phone, agent_name')
+      .eq('client_id', client_id)
+      .order('created_at', { ascending: true })
+      .limit(200);
+
+    if (error || !todos) return null;
+
+    const mensajes = todos.filter(m =>
+      m.lead_phone && m.lead_phone.replace(/\D/g, '').includes(baseNumero)
+    );
+
+    // Prompt base
+    let promptSistema = clienteMatch.prompt_inicial?.trim()
+      || `Eres un asistente comercial de ${clienteMatch.nombre}.`;
+
+    const messages = [{ role: 'system', content: promptSistema }];
+
+    mensajes.slice(-6).forEach(msg => {
+      if (!msg.last_message) return;
+      const esBot = msg.origen === 'unicorn' || msg.agent_name === 'Unicorn AI';
+      messages.push({
+        role: esBot ? 'assistant' : 'user',
+        content: msg.last_message.slice(0, 500)
+      });
+    });
+
+    return messages;
+
+  } catch (err) {
+    console.error('❌ Error generando historial:', err.message);
+    return null;
+  }
+};
       .single();
 
     if (clienteError && clienteError.code !== 'PGRST116') {
