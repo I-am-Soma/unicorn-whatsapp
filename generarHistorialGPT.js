@@ -100,4 +100,4 @@ const generarHistorialGPT = async (leadPhone, supabase, client_id) => {
   }
 };
 
-module.exports = { generarHistorialGPT };
+module.exports = { generarHistorialGPT }; 
